@@ -1,0 +1,55 @@
+{
+  "mode": "all",
+  "output_dir": "reports",
+  "log_level": "INFO",
+  "report_format": ["json", "html"],
+  
+  "blackbox": {
+    "target_url": "http://localhost:8083/inventory/1/M",
+    "timeout": 10,
+    "threads": 5,
+    "wordlist_path": "wordlists/common.txt",
+    "callback_server": null,
+    
+    "endpoint_discovery": true,
+    "parameter_fuzzing": true,
+    "port_scanning": true,
+    
+    "external_callback_test": true,
+    "time_based_test": true,
+    "error_based_test": true,
+    
+    "internal_scan": true,
+    "max_scan_ports": 50
+  },
+  
+  "graybox": {
+    "target_url": "http://localhost:8083",
+    "docker_host": null,
+    "kubernetes_config": null,
+    "api_docs_path": null,
+    "architecture_file": "docker-compose.yml",
+    
+    "docker_inspect": true,
+    "network_mapping": true,
+    
+    "swagger_parse": false,
+    "targeted_endpoints": [],
+    
+    "auth_bypass_test": true
+  },
+  
+  "whitebox": {
+    "source_code_path": "../",
+    "languages": ["python", "java", "javascript"],
+    
+    "code_scan": true,
+    "dependency_check": true,
+    "config_audit": true,
+    
+    "instrumentation": false,
+    "runtime_trace": false,
+    
+    "generate_tests": false
+  }
+}

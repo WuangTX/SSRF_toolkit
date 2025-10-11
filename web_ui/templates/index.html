@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Microservice SSRF Pentest Toolkit</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <!-- Header -->
+    <header>
+        <div class="container">
+            <div class="logo">
+                <i class="fas fa-shield-alt"></i>
+                <h1>SSRF Pentest Toolkit</h1>
+            </div>
+            <nav>
+                <span class="status-badge" id="statusBadge">
+                    <i class="fas fa-circle"></i> Ready
+                </span>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="container">
+        <!-- Configuration Panel -->
+        <section class="panel config-panel">
+            <h2><i class="fas fa-cog"></i> Scan Configuration</h2>
+            
+            <form id="scanForm">
+                <div class="form-grid">
+                    <!-- Mode Selection -->
+                    <div class="form-group full-width">
+                        <label>Testing Mode</label>
+                        <div class="mode-selector">
+                            <label class="mode-option">
+                                <input type="radio" name="mode" value="blackbox" checked>
+                                <span>
+                                    <i class="fas fa-box"></i>
+                                    <strong>Black Box</strong>
+                                    <small>External testing only</small>
+                                </span>
+                            </label>
+                            <label class="mode-option">
+                                <input type="radio" name="mode" value="graybox">
+                                <span>
+                                    <i class="fas fa-adjust"></i>
+                                    <strong>Gray Box</strong>
+                                    <small>With Docker access</small>
+                                </span>
+                            </label>
+                            <label class="mode-option">
+                                <input type="radio" name="mode" value="whitebox">
+                                <span>
+                                    <i class="fas fa-code"></i>
+                                    <strong>White Box</strong>
+                                    <small>Source code analysis</small>
+                                </span>
+                            </label>
+                            <label class="mode-option">
+                                <input type="radio" name="mode" value="all">
+                                <span>
+                                    <i class="fas fa-layer-group"></i>
+                                    <strong>Full Scan</strong>
+                                    <small>All modes combined</small>
+                                </span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Target URL -->
+                    <div class="form-group">
+                        <label for="target">
+                            <i class="fas fa-bullseye"></i> Target URL
+                        </label>
+                        <input type="url" id="target" name="target" 
+                               placeholder="http://localhost:8083/inventory/1/M" 
+                               required>
+                    </div>
+
+                    <!-- Source Path (for whitebox) -->
+                    <div class="form-group">
+                        <label for="sourcePath">
+                            <i class="fas fa-folder"></i> Source Code Path
+                        </label>
+                        <input type="text" id="sourcePath" name="source_path" 
+                               placeholder="./microservice_lab">
+                    </div>
+
+                    <!-- Timeout -->
+                    <div class="form-group">
+                        <label for="timeout">
+                            <i class="fas fa-clock"></i> Timeout (seconds)
+                        </label>
+                        <input type="number" id="timeout" name="timeout" 
+                               value="10" min="1" max="60">
+                    </div>
+                </div>
+
+                <!-- Testing Options -->
+                <div class="options-group">
+                    <h3>Testing Modules</h3>
+                    <div class="checkbox-grid">
+                        <label class="checkbox-option">
+                            <input type="checkbox" name="endpoint_discovery" checked>
+                            <span>
+                                <i class="fas fa-search"></i> Endpoint Discovery
+                            </span>
+                        </label>
+                        <label class="checkbox-option">
+                            <input type="checkbox" name="parameter_fuzzing" checked>
+                            <span>
+                                <i class="fas fa-random"></i> Parameter Fuzzing
+                            </span>
+                        </label>
+                        <label class="checkbox-option">
+                            <input type="checkbox" name="callback_testing" checked>
+                            <span>
+                                <i class="fas fa-phone"></i> Callback Testing
+                            </span>
+                        </label>
+                        <label class="checkbox-option">
+                            <input type="checkbox" name="internal_scanning" checked>
+                            <span>
+                                <i class="fas fa-network-wired"></i> Internal Scanning
+                            </span>
+                        </label>
+                        <label class="checkbox-option">
+                            <input type="checkbox" name="docker_inspection">
+                            <span>
+                                <i class="fab fa-docker"></i> Docker Inspection
+                            </span>
+                        </label>
+                        <label class="checkbox-option">
+                            <input type="checkbox" name="code_scanning">
+                            <span>
+                                <i class="fas fa-file-code"></i> Code Scanning
+                            </span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="button-group">
+                    <button type="submit" class="btn btn-primary" id="startBtn">
+                        <i class="fas fa-play"></i> Start Scan
+                    </button>
+                    <button type="button" class="btn btn-danger" id="stopBtn" disabled>
+                        <i class="fas fa-stop"></i> Stop Scan
+                    </button>
+                    <button type="button" class="btn btn-warning" id="resetBtn">
+                        <i class="fas fa-redo"></i> Reset
+                    </button>
+                    <button type="button" class="btn btn-secondary" id="exportBtn">
+                        <i class="fas fa-download"></i> Export Report
+                    </button>
+                </div>
+            </form>
+        </section>
+
+        <!-- Progress Panel -->
+        <section class="panel progress-panel" id="progressPanel" style="display: none;">
+            <h2><i class="fas fa-tasks"></i> Scan Progress</h2>
+            
+            <div class="progress-info">
+                <div class="progress-header">
+                    <span id="currentPhase">Initializing...</span>
+                    <span id="progressPercent">0%</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+            </div>
+
+            <div class="scan-stats">
+                <div class="stat-card">
+                    <i class="fas fa-bug"></i>
+                    <div class="stat-content">
+                        <span class="stat-label">Findings</span>
+                        <span class="stat-value" id="findingsCount">0</span>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <i class="fas fa-clock"></i>
+                    <div class="stat-content">
+                        <span class="stat-label">Elapsed Time</span>
+                        <span class="stat-value" id="elapsedTime">00:00</span>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <i class="fas fa-server"></i>
+                    <div class="stat-content">
+                        <span class="stat-label">Callback Server</span>
+                        <span class="stat-value" id="callbackStatus">
+                            <span class="badge badge-success">Active</span>
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Findings Panel -->
+        <section class="panel findings-panel">
+            <h2><i class="fas fa-exclamation-triangle"></i> Findings</h2>
+            
+            <div class="findings-filter">
+                <button class="filter-btn active" data-filter="all">
+                    All <span class="badge" id="countAll">0</span>
+                </button>
+                <button class="filter-btn" data-filter="CRITICAL">
+                    Critical <span class="badge badge-critical" id="countCritical">0</span>
+                </button>
+                <button class="filter-btn" data-filter="HIGH">
+                    High <span class="badge badge-high" id="countHigh">0</span>
+                </button>
+                <button class="filter-btn" data-filter="MEDIUM">
+                    Medium <span class="badge badge-medium" id="countMedium">0</span>
+                </button>
+                <button class="filter-btn" data-filter="LOW">
+                    Low <span class="badge badge-low" id="countLow">0</span>
+                </button>
+            </div>
+
+            <div class="findings-list" id="findingsList">
+                <div class="empty-state">
+                    <i class="fas fa-search"></i>
+                    <p>No findings yet. Start a scan to detect vulnerabilities.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Console Panel -->
+        <section class="panel console-panel">
+            <h2>
+                <i class="fas fa-terminal"></i> Console Output
+                <button class="btn-small" id="clearConsoleBtn">
+                    <i class="fas fa-trash"></i> Clear
+                </button>
+            </h2>
+            
+            <div class="console" id="console">
+                <div class="console-line info">
+                    <span class="timestamp">--:--:--</span>
+                    <span class="message">Ready to start scanning...</span>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer>
+        <div class="container">
+            <p>
+                <i class="fas fa-shield-alt"></i> 
+                Microservice SSRF Pentest Toolkit v1.0 | 
+                Built with <i class="fas fa-heart"></i> for Security Researchers
+            </p>
+        </div>
+    </footer>
+
+    <!-- Scripts -->
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
