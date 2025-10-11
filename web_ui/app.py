@@ -260,30 +260,57 @@ def run_blackbox(config: ToolkitConfig, db: FindingDatabase):
     web_logger.info("🎯 Starting Black Box Testing")
     target_url = config.blackbox.target_url
     fuzz_results = []
+    discovered_endpoints = []
     
-    # Phase 1: Endpoint Discovery
+    # Phase 1: Comprehensive Endpoint Discovery
     if config.blackbox.endpoint_discovery:
         update_progress('Endpoint Discovery', 10)
-        web_logger.info("📡 Phase 1: Endpoint Discovery")
+        web_logger.info("📡 Phase 1: Comprehensive Endpoint Discovery")
+        web_logger.info(f"🎯 Target: {target_url}")
         
         try:
             discovery = EndpointDiscovery(target_url, timeout=config.blackbox.timeout)
-            endpoints = discovery.discover_from_wordlist(config.blackbox.wordlist_path)
-            web_logger.info(f"✅ Discovered {len(endpoints)} endpoints")
+            
+            # Use comprehensive discovery (robots.txt, sitemap, wordlist, spider)
+            endpoint_results = discovery.discover_comprehensive(config.blackbox.wordlist_path)
+            
+            # Extract URLs from discovery results
+            for result in endpoint_results:
+                discovered_endpoints.append(result['url'])
+                web_logger.info(f"  ✓ {result['url']} [{result['status_code']}]")
+            
+            web_logger.info(f"✅ Discovered {len(discovered_endpoints)} unique endpoints")
+            
+            # If no endpoints found, use base URL
+            if not discovered_endpoints:
+                web_logger.info("ℹ️ No endpoints found, will test base URL")
+                discovered_endpoints = [target_url]
         except Exception as e:
-            web_logger.warning(f"⚠️ Endpoint discovery skipped: {str(e)}")
+            web_logger.warning(f"⚠️ Endpoint discovery failed: {str(e)}")
+            import traceback
+            web_logger.error(traceback.format_exc())
             web_logger.info("ℹ️ Proceeding with target URL directly")
-            endpoints = [target_url]
+            discovered_endpoints = [target_url]
         
         update_progress('Endpoint Discovery Complete', 20)
+    else:
+        # Skip discovery, just use target URL
+        web_logger.info("ℹ️ Endpoint discovery disabled, using target URL directly")
+        discovered_endpoints = [target_url]
     
-    # Phase 2: Parameter Fuzzing
+    # Phase 2: Parameter Fuzzing on ALL discovered endpoints
     if config.blackbox.parameter_fuzzing:
         update_progress('Parameter Fuzzing', 30)
-        web_logger.info("🔍 Phase 2: Parameter Fuzzing")
+        web_logger.info(f"🔍 Phase 2: Parameter Fuzzing ({len(discovered_endpoints)} endpoints)")
         
         fuzzer = ParameterFuzzer(timeout=config.blackbox.timeout)
-        fuzz_results = fuzzer.fuzz_endpoint(target_url)
+        
+        # Fuzz each discovered endpoint
+        for idx, endpoint_url in enumerate(discovered_endpoints):
+            web_logger.info(f"[{idx+1}/{len(discovered_endpoints)}] Fuzzing: {endpoint_url}")
+            
+            endpoint_fuzz_results = fuzzer.fuzz_endpoint(endpoint_url)
+            fuzz_results.extend(endpoint_fuzz_results)
         
         for result in fuzz_results:
             # Report all findings, not just high confidence ones
@@ -312,19 +339,19 @@ def run_blackbox(config: ToolkitConfig, db: FindingDatabase):
         detector = ExternalCallbackDetector(callback_server)
         
         # Test ALL suspicious parameters, not just high confidence ones
-        for result in fuzz_results:
-            web_logger.info(f"Testing callback for parameter: {result['parameter']}")
+        for idx, result in enumerate(fuzz_results):
+            web_logger.info(f"[{idx+1}/{len(fuzz_results)}] Testing callback for parameter: {result['parameter']} at {result['url']}")
             
             try:
                 callback_result = detector.test_ssrf(
-                    target_url=target_url,
+                    target_url=result['url'],  # Use the endpoint URL where parameter was found
                     parameter=result['parameter'],
                     timeout=10
                 )
                 
                 if callback_result['is_vulnerable']:
                     web_logger.finding('CRITICAL',
-                        f"✅ CONFIRMED SSRF via {result['parameter']} - Received {callback_result['callbacks_received']} callbacks"
+                        f"✅ CONFIRMED SSRF via {result['parameter']} at {result['url']} - Received {callback_result['callbacks_received']} callbacks"
                     )
                 else:
                     web_logger.info(f"❌ No callback received for {result['parameter']}")

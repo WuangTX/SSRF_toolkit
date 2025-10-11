@@ -48,6 +48,54 @@ class EndpointDiscovery:
         
         return results
     
+    def discover_comprehensive(self, wordlist_path: str = None) -> List[Dict]:
+        """
+        Comprehensive endpoint discovery combining multiple techniques
+        """
+        all_endpoints = {}  # Use dict to deduplicate by URL
+        
+        print("[*] Starting comprehensive endpoint discovery...")
+        
+        # Method 1: robots.txt
+        print("[*] Checking robots.txt...")
+        robots_paths = self.discover_from_robots_txt()
+        for path in robots_paths:
+            result = self._test_path(path)
+            if result:
+                all_endpoints[result['url']] = result
+        
+        # Method 2: sitemap.xml
+        print("[*] Checking sitemap.xml...")
+        sitemap_paths = self.discover_from_sitemap()
+        for path in sitemap_paths:
+            result = self._test_path(path)
+            if result:
+                all_endpoints[result['url']] = result
+        
+        # Method 3: Wordlist brute-force
+        if wordlist_path:
+            print("[*] Brute-forcing with wordlist...")
+            wordlist_results = self.discover_from_wordlist(wordlist_path)
+            for result in wordlist_results:
+                all_endpoints[result['url']] = result
+        
+        # Method 4: Spider (lightweight crawl)
+        print("[*] Spidering for links...")
+        try:
+            spidered_urls = self.spider_endpoints(max_depth=1)
+            for url in list(spidered_urls)[:20]:  # Limit to prevent too many
+                if url not in all_endpoints:
+                    result = self._test_path(url)
+                    if result:
+                        all_endpoints[result['url']] = result
+        except Exception as e:
+            print(f"[!] Spidering failed: {str(e)}")
+        
+        results = list(all_endpoints.values())
+        print(f"[+] Total unique endpoints discovered: {len(results)}")
+        
+        return results
+    
     def _test_path(self, path: str) -> Dict:
         """Test một path cụ thể"""
         url = urljoin(self.target_url, path)
