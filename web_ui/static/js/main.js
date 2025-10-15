@@ -76,6 +76,10 @@ function setupEventListeners() {
     socket.on('progress', (data) => {
         updateProgress(data.phase, data.progress);
     });
+
+    socket.on('endpoint', (data) => {
+        addEndpoint(data);
+    });
 }
 
 // Start Scan
@@ -224,11 +228,13 @@ function updateUIForScanStart() {
     startBtn.disabled = true;
     stopBtn.disabled = false;
     progressPanel.style.display = 'block';
+    document.getElementById('endpointsPanel').style.display = 'block';
     statusBadge.innerHTML = '<i class="fas fa-circle"></i> Scanning';
     statusBadge.classList.add('scanning');
     
-    // Clear previous findings
+    // Clear previous results
     findingsList.innerHTML = '';
+    clearEndpoints();
     resetFindingsCounts();
 }
 
@@ -394,6 +400,87 @@ function stopTimer() {
         clearInterval(scanState.timerInterval);
         scanState.timerInterval = null;
     }
+}
+
+// Endpoints Management
+function addEndpoint(endpoint) {
+    const endpointsList = document.getElementById('endpointsList');
+    const endpointsCount = document.getElementById('endpointsCount');
+    
+    // Remove empty state if present
+    const emptyState = endpointsList.querySelector('.empty-state');
+    if (emptyState) {
+        emptyState.remove();
+    }
+    
+    // Determine status class
+    const statusCode = endpoint.status_code;
+    let statusClass = 'status-' + statusCode;
+    let statusIcon = 'fa-check-circle';
+    
+    if (statusCode >= 200 && statusCode < 300) {
+        statusIcon = 'fa-check-circle';
+    } else if (statusCode >= 300 && statusCode < 400) {
+        statusIcon = 'fa-arrow-right';
+    } else if (statusCode >= 400 && statusCode < 500) {
+        statusIcon = 'fa-exclamation-circle';
+    } else if (statusCode >= 500) {
+        statusIcon = 'fa-times-circle';
+    }
+    
+    // Create endpoint item
+    const endpointItem = document.createElement('div');
+    endpointItem.className = 'endpoint-item';
+    endpointItem.innerHTML = `
+        <div class="endpoint-icon">
+            <i class="fas fa-link"></i>
+        </div>
+        <div class="endpoint-details">
+            <div class="endpoint-url">${escapeHtml(endpoint.url)}</div>
+            <div class="endpoint-meta">
+                <span class="endpoint-status ${statusClass}">
+                    <i class="fas ${statusIcon}"></i>
+                    ${statusCode}
+                </span>
+                <span class="endpoint-content-type">
+                    ${endpoint.content_type || 'unknown'}
+                </span>
+                <span class="endpoint-size">
+                    ${formatBytes(endpoint.content_length)}
+                </span>
+            </div>
+        </div>
+    `;
+    
+    endpointsList.appendChild(endpointItem);
+    
+    // Update count
+    const currentCount = parseInt(endpointsCount.textContent || '0');
+    endpointsCount.textContent = currentCount + 1;
+}
+
+function clearEndpoints() {
+    const endpointsList = document.getElementById('endpointsList');
+    const endpointsCount = document.getElementById('endpointsCount');
+    
+    endpointsList.innerHTML = `
+        <div class="empty-state">
+            <i class="fas fa-search"></i>
+            <p>No endpoints discovered yet. Start a scan to see results.</p>
+        </div>
+    `;
+    endpointsCount.textContent = '0';
+}
+
+function formatBytes(bytes) {
+    if (bytes === 0) return '0 B';
+    if (!bytes) return 'N/A';
+    
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
 // Utility Functions

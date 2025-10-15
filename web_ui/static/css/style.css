@@ -602,6 +602,117 @@ footer i.fa-heart {
     color: var(--danger-color);
 }
 
+/* Endpoints Panel */
+.endpoints-panel {
+    margin-bottom: 2rem;
+}
+
+.endpoints-list {
+    display: grid;
+    gap: 0.75rem;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.endpoint-item {
+    background: var(--bg-light);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    transition: all 0.3s ease;
+}
+
+.endpoint-item:hover {
+    border-color: var(--primary-color);
+    transform: translateX(5px);
+    background: rgba(37, 99, 235, 0.1);
+}
+
+.endpoint-icon {
+    font-size: 1.5rem;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-dark);
+    border-radius: 8px;
+    flex-shrink: 0;
+}
+
+.endpoint-icon i {
+    color: var(--primary-color);
+}
+
+.endpoint-details {
+    flex: 1;
+    min-width: 0;
+}
+
+.endpoint-url {
+    font-family: 'Courier New', monospace;
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    word-break: break-all;
+    margin-bottom: 0.25rem;
+}
+
+.endpoint-meta {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.endpoint-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.85rem;
+}
+
+.endpoint-status.status-200 {
+    color: var(--success-color);
+}
+
+.endpoint-status.status-301,
+.endpoint-status.status-302 {
+    color: var(--info-color);
+}
+
+.endpoint-status.status-401,
+.endpoint-status.status-403 {
+    color: var(--warning-color);
+}
+
+.endpoint-status.status-404,
+.endpoint-status.status-500 {
+    color: var(--danger-color);
+}
+
+.endpoint-content-type {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.empty-state {
+    text-align: center;
+    padding: 3rem 2rem;
+    color: var(--text-secondary);
+}
+
+.empty-state i {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+    opacity: 0.3;
+}
+
+.empty-state p {
+    font-size: 1rem;
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar {
     width: 8px;

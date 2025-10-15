@@ -37,6 +37,7 @@ scan_state = {
     'current_phase': None,
     'progress': 0,
     'findings': [],
+    'endpoints': [],
     'logs': [],
     'start_time': None,
     'callback_server': None
@@ -67,6 +68,11 @@ class WebUILogger:
             'message': message,
             'timestamp': datetime.now().isoformat()
         })
+    
+    def endpoint(self, endpoint_data):
+        """Emit discovered endpoint to UI"""
+        socketio.emit('endpoint', endpoint_data)
+        scan_state['endpoints'].append(endpoint_data)
     
     def _emit_log(self, level, message, severity=None):
         log_entry = {
@@ -274,10 +280,18 @@ def run_blackbox(config: ToolkitConfig, db: FindingDatabase):
             # Use comprehensive discovery (robots.txt, sitemap, wordlist, spider)
             endpoint_results = discovery.discover_comprehensive(config.blackbox.wordlist_path)
             
-            # Extract URLs from discovery results
+            # Extract URLs from discovery results and emit to UI
             for result in endpoint_results:
                 discovered_endpoints.append(result['url'])
                 web_logger.info(f"  ✓ {result['url']} [{result['status_code']}]")
+                
+                # Emit endpoint to UI
+                web_logger.endpoint({
+                    'url': result['url'],
+                    'status_code': result['status_code'],
+                    'content_length': result.get('content_length', 0),
+                    'content_type': result.get('content_type', 'unknown')
+                })
             
             web_logger.info(f"✅ Discovered {len(discovered_endpoints)} unique endpoints")
             

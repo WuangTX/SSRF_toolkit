@@ -25,15 +25,30 @@ class ParameterFuzzer:
     
     # Test values để detect SSRF
     TEST_PAYLOADS = [
+        # External URLs (safe reserved domains)
         'http://example.com',
         'https://example.com',
+        
+        # Localhost variants
         'http://127.0.0.1',
         'http://localhost',
-        'http://169.254.169.254',  # AWS metadata
+        'http://0.0.0.0',           # Alternative localhost
+        'http://[::1]',             # IPv6 localhost
+        
+        # Cloud metadata endpoints
+        'http://169.254.169.254',   # AWS metadata
+        'http://169.254.169.254/latest/meta-data/',  # AWS IAM credentials
         'http://metadata.google.internal',  # GCP metadata
-        'file:///etc/passwd',
-        'dict://localhost:6379',
-        'gopher://localhost:6379'
+        'http://metadata.google.internal/computeMetadata/v1/',  # GCP detailed
+        
+        # Protocol smuggling
+        'file:///etc/passwd',       # Local file read
+        'dict://localhost:6379',    # Redis protocol
+        'gopher://localhost:6379',  # Generic TCP protocol
+        
+        # Docker/Internal network
+        'http://host.docker.internal',  # Docker host access
+        'http://172.17.0.1',       # Docker gateway
     ]
     
     def __init__(self, timeout: int = 10, threads: int = 5):
