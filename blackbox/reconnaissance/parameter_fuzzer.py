@@ -169,22 +169,35 @@ class ParameterFuzzer:
                 'is_vulnerable': confidence >= 0.5
             }
         
-        # Even without findings, if parameter name is HIGHLY suspicious, report it
-        high_risk_keywords = ['callback_url', 'webhook_url', 'redirect_url', 'url', 'uri']
+        # STRICT CHECK: Only report if parameter name is suspicious AND endpoint behaves differently
+        high_risk_keywords = ['callback_url', 'webhook_url', 'redirect_url']
         if any(keyword == param.lower() for keyword in high_risk_keywords):
-            # Parameter accepted without errors - report as suspicious
-            return {
-                'parameter': param,
-                'url': url,
-                'method': method,
-                'findings': [{
-                    'payload': 'test',
-                    'indicators': ['parameter_accepted_by_name'],
-                    'note': 'Parameter name matches known SSRF patterns'
-                }],
-                'confidence': 0.4,  # Medium-low confidence without behavioral proof
-                'is_vulnerable': False
-            }
+            # Do one more test to verify parameter is actually processed
+            try:
+                if method.upper() == 'GET':
+                    # Test with two different values
+                    test1_url = f"{url}?{param}=http://example1.com"
+                    test2_url = f"{url}?{param}=http://example2.com"
+                    resp1 = self.session.get(test1_url, timeout=self.timeout)
+                    resp2 = self.session.get(test2_url, timeout=self.timeout)
+                    
+                    # Check if responses are DIFFERENT (means parameter is processed)
+                    if resp1.text != resp2.text or resp1.status_code != resp2.status_code:
+                        # Parameter is actually processed!
+                        return {
+                            'parameter': param,
+                            'url': url,
+                            'method': method,
+                            'findings': [{
+                                'payload': 'test',
+                                'indicators': ['parameter_processed_by_name'],
+                                'note': 'Parameter name matches SSRF patterns AND server processes it'
+                            }],
+                            'confidence': 0.4,
+                            'is_vulnerable': False
+                        }
+            except:
+                pass
         
         return None
     

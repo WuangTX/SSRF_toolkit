@@ -1,0 +1,1864 @@
+{
+  "findings": [
+    {
+      "severity": "LOW",
+      "message": "Suspicious parameter: callback_url (confidence: 0.04)",
+      "timestamp": "2025-10-15T12:38:29.372344"
+    },
+    {
+      "severity": "CRITICAL",
+      "message": "\u2705 CONFIRMED SSRF via callback_url at http://localhost:8083/api/inventory/5/M - Received 1 callbacks",
+      "timestamp": "2025-10-15T12:38:34.477561"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: localhost:80 - HTTP",
+      "timestamp": "2025-10-15T12:38:34.967667"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: localhost:8080 - HTTP-Alt",
+      "timestamp": "2025-10-15T12:38:34.967667"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: localhost:8081 - HTTP-Service",
+      "timestamp": "2025-10-15T12:38:34.967667"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: localhost:8082 - HTTP-Service",
+      "timestamp": "2025-10-15T12:38:34.976561"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: localhost:443 - HTTPS",
+      "timestamp": "2025-10-15T12:38:34.976561"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: localhost:8083 - Unknown-8083",
+      "timestamp": "2025-10-15T12:38:34.976561"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: localhost:5432 - PostgreSQL",
+      "timestamp": "2025-10-15T12:38:34.976561"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: localhost:8085 - Unknown-8085",
+      "timestamp": "2025-10-15T12:38:34.976561"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: localhost:8084 - Unknown-8084",
+      "timestamp": "2025-10-15T12:38:34.979776"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: localhost:6379 - Redis",
+      "timestamp": "2025-10-15T12:38:34.980404"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: localhost:3306 - MySQL",
+      "timestamp": "2025-10-15T12:38:34.980404"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: localhost:27017 - MongoDB",
+      "timestamp": "2025-10-15T12:38:34.980404"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: localhost:11211 - Memcached",
+      "timestamp": "2025-10-15T12:38:34.980404"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: localhost:3307 - Unknown-3307",
+      "timestamp": "2025-10-15T12:38:34.980404"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: localhost:5433 - Unknown-5433",
+      "timestamp": "2025-10-15T12:38:34.980404"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 127.0.0.1:443 - HTTPS",
+      "timestamp": "2025-10-15T12:38:34.980404"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 127.0.0.1:8082 - HTTP-Service",
+      "timestamp": "2025-10-15T12:38:34.980404"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 127.0.0.1:5432 - PostgreSQL",
+      "timestamp": "2025-10-15T12:38:34.980404"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 127.0.0.1:8080 - HTTP-Alt",
+      "timestamp": "2025-10-15T12:38:34.980404"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 127.0.0.1:8081 - HTTP-Service",
+      "timestamp": "2025-10-15T12:38:34.986970"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 127.0.0.1:8083 - Unknown-8083",
+      "timestamp": "2025-10-15T12:38:34.986970"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 127.0.0.1:8084 - Unknown-8084",
+      "timestamp": "2025-10-15T12:38:34.986970"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 127.0.0.1:80 - HTTP",
+      "timestamp": "2025-10-15T12:38:34.986970"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 127.0.0.1:3307 - Unknown-3307",
+      "timestamp": "2025-10-15T12:38:34.986970"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 127.0.0.1:8085 - Unknown-8085",
+      "timestamp": "2025-10-15T12:38:34.986970"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 127.0.0.1:3306 - MySQL",
+      "timestamp": "2025-10-15T12:38:34.986970"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 127.0.0.1:6379 - Redis",
+      "timestamp": "2025-10-15T12:38:34.986970"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 127.0.0.1:5433 - Unknown-5433",
+      "timestamp": "2025-10-15T12:38:34.986970"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 127.0.0.1:27017 - MongoDB",
+      "timestamp": "2025-10-15T12:38:34.986970"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 127.0.0.1:11211 - Memcached",
+      "timestamp": "2025-10-15T12:38:34.986970"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 172.17.0.1:8080 - HTTP-Alt",
+      "timestamp": "2025-10-15T12:38:34.986970"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 172.17.0.1:8083 - Unknown-8083",
+      "timestamp": "2025-10-15T12:38:34.986970"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 172.17.0.1:8084 - Unknown-8084",
+      "timestamp": "2025-10-15T12:38:34.986970"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 172.17.0.1:443 - HTTPS",
+      "timestamp": "2025-10-15T12:38:34.995676"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 172.17.0.1:8081 - HTTP-Service",
+      "timestamp": "2025-10-15T12:38:34.996335"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 172.17.0.1:80 - HTTP",
+      "timestamp": "2025-10-15T12:38:34.996335"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 172.17.0.1:8082 - HTTP-Service",
+      "timestamp": "2025-10-15T12:38:34.997392"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 172.17.0.1:5433 - Unknown-5433",
+      "timestamp": "2025-10-15T12:38:34.997392"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 172.17.0.1:5432 - PostgreSQL",
+      "timestamp": "2025-10-15T12:38:34.997392"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 172.17.0.1:3307 - Unknown-3307",
+      "timestamp": "2025-10-15T12:38:34.997392"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 172.17.0.1:8085 - Unknown-8085",
+      "timestamp": "2025-10-15T12:38:34.997392"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 172.17.0.1:11211 - Memcached",
+      "timestamp": "2025-10-15T12:38:34.997392"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 172.17.0.1:27017 - MongoDB",
+      "timestamp": "2025-10-15T12:38:34.997392"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 172.17.0.1:6379 - Redis",
+      "timestamp": "2025-10-15T12:38:34.997392"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 172.17.0.1:3306 - MySQL",
+      "timestamp": "2025-10-15T12:38:34.997392"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 172.18.0.1:8085 - Unknown-8085",
+      "timestamp": "2025-10-15T12:38:34.997392"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 172.18.0.1:8082 - HTTP-Service",
+      "timestamp": "2025-10-15T12:38:34.997392"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 172.18.0.1:80 - HTTP",
+      "timestamp": "2025-10-15T12:38:34.997392"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 172.18.0.1:8080 - HTTP-Alt",
+      "timestamp": "2025-10-15T12:38:34.997392"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 172.18.0.1:8084 - Unknown-8084",
+      "timestamp": "2025-10-15T12:38:34.997392"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 172.18.0.1:443 - HTTPS",
+      "timestamp": "2025-10-15T12:38:34.997392"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 172.18.0.1:5432 - PostgreSQL",
+      "timestamp": "2025-10-15T12:38:34.997392"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 172.18.0.1:8081 - HTTP-Service",
+      "timestamp": "2025-10-15T12:38:35.007579"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 172.18.0.1:8083 - Unknown-8083",
+      "timestamp": "2025-10-15T12:38:35.007579"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 172.18.0.1:5433 - Unknown-5433",
+      "timestamp": "2025-10-15T12:38:35.007579"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 172.18.0.1:27017 - MongoDB",
+      "timestamp": "2025-10-15T12:38:35.007579"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 172.18.0.1:3306 - MySQL",
+      "timestamp": "2025-10-15T12:38:35.007579"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 172.18.0.1:6379 - Redis",
+      "timestamp": "2025-10-15T12:38:35.007579"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 172.18.0.1:3307 - Unknown-3307",
+      "timestamp": "2025-10-15T12:38:35.007579"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: 172.18.0.1:11211 - Memcached",
+      "timestamp": "2025-10-15T12:38:35.011797"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: user-service:8080 - HTTP-Alt",
+      "timestamp": "2025-10-15T12:38:35.012456"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: user-service:80 - HTTP",
+      "timestamp": "2025-10-15T12:38:35.012456"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: user-service:8081 - HTTP-Service",
+      "timestamp": "2025-10-15T12:38:35.012456"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: user-service:8082 - HTTP-Service",
+      "timestamp": "2025-10-15T12:38:35.012456"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: user-service:8083 - Unknown-8083",
+      "timestamp": "2025-10-15T12:38:35.012456"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: user-service:5432 - PostgreSQL",
+      "timestamp": "2025-10-15T12:38:35.012456"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: user-service:3306 - MySQL",
+      "timestamp": "2025-10-15T12:38:35.012456"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: product-service:80 - HTTP",
+      "timestamp": "2025-10-15T12:38:35.012456"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: product-service:8081 - HTTP-Service",
+      "timestamp": "2025-10-15T12:38:35.017808"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: product-service:8082 - HTTP-Service",
+      "timestamp": "2025-10-15T12:38:35.018328"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: product-service:8080 - HTTP-Alt",
+      "timestamp": "2025-10-15T12:38:35.018328"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: product-service:3306 - MySQL",
+      "timestamp": "2025-10-15T12:38:35.020214"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: product-service:8083 - Unknown-8083",
+      "timestamp": "2025-10-15T12:38:35.020806"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: product-service:5432 - PostgreSQL",
+      "timestamp": "2025-10-15T12:38:35.020806"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: inventory-service:8081 - HTTP-Service",
+      "timestamp": "2025-10-15T12:38:35.020806"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: inventory-service:80 - HTTP",
+      "timestamp": "2025-10-15T12:38:35.020806"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: inventory-service:8080 - HTTP-Alt",
+      "timestamp": "2025-10-15T12:38:35.020806"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: inventory-service:3306 - MySQL",
+      "timestamp": "2025-10-15T12:38:35.020806"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: inventory-service:5432 - PostgreSQL",
+      "timestamp": "2025-10-15T12:38:35.020806"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: inventory-service:8083 - Unknown-8083",
+      "timestamp": "2025-10-15T12:38:35.020806"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: inventory-service:8082 - HTTP-Service",
+      "timestamp": "2025-10-15T12:38:35.020806"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: auth-service:8080 - HTTP-Alt",
+      "timestamp": "2025-10-15T12:38:35.026023"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: auth-service:80 - HTTP",
+      "timestamp": "2025-10-15T12:38:35.026023"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: auth-service:8081 - HTTP-Service",
+      "timestamp": "2025-10-15T12:38:35.026023"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: auth-service:8082 - HTTP-Service",
+      "timestamp": "2025-10-15T12:38:35.026023"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: auth-service:8083 - Unknown-8083",
+      "timestamp": "2025-10-15T12:38:35.028175"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: auth-service:5432 - PostgreSQL",
+      "timestamp": "2025-10-15T12:38:35.028717"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: auth-service:3306 - MySQL",
+      "timestamp": "2025-10-15T12:38:35.029548"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: api-gateway:80 - HTTP",
+      "timestamp": "2025-10-15T12:38:35.029548"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: api-gateway:8080 - HTTP-Alt",
+      "timestamp": "2025-10-15T12:38:35.029548"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: api-gateway:8081 - HTTP-Service",
+      "timestamp": "2025-10-15T12:38:35.029548"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: api-gateway:8082 - HTTP-Service",
+      "timestamp": "2025-10-15T12:38:35.029548"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: api-gateway:8083 - Unknown-8083",
+      "timestamp": "2025-10-15T12:38:35.029548"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: api-gateway:5432 - PostgreSQL",
+      "timestamp": "2025-10-15T12:38:35.029548"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: api-gateway:3306 - MySQL",
+      "timestamp": "2025-10-15T12:38:35.029548"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: database:80 - HTTP",
+      "timestamp": "2025-10-15T12:38:35.029548"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: database:8080 - HTTP-Alt",
+      "timestamp": "2025-10-15T12:38:35.034742"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: database:8081 - HTTP-Service",
+      "timestamp": "2025-10-15T12:38:35.034742"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: database:8082 - HTTP-Service",
+      "timestamp": "2025-10-15T12:38:35.036614"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: database:5432 - PostgreSQL",
+      "timestamp": "2025-10-15T12:38:35.037299"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: database:8083 - Unknown-8083",
+      "timestamp": "2025-10-15T12:38:35.038411"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: database:3306 - MySQL",
+      "timestamp": "2025-10-15T12:38:35.038411"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: db:8080 - HTTP-Alt",
+      "timestamp": "2025-10-15T12:38:35.038411"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: db:80 - HTTP",
+      "timestamp": "2025-10-15T12:38:35.038411"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: db:8081 - HTTP-Service",
+      "timestamp": "2025-10-15T12:38:35.038411"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: db:8082 - HTTP-Service",
+      "timestamp": "2025-10-15T12:38:35.038411"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: db:5432 - PostgreSQL",
+      "timestamp": "2025-10-15T12:38:35.038411"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: db:3306 - MySQL",
+      "timestamp": "2025-10-15T12:38:35.038411"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: db:8083 - Unknown-8083",
+      "timestamp": "2025-10-15T12:38:35.038411"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: postgres:8080 - HTTP-Alt",
+      "timestamp": "2025-10-15T12:38:35.038411"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: postgres:80 - HTTP",
+      "timestamp": "2025-10-15T12:38:35.038411"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: postgres:8081 - HTTP-Service",
+      "timestamp": "2025-10-15T12:38:35.045704"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: postgres:3306 - MySQL",
+      "timestamp": "2025-10-15T12:38:35.045704"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: postgres:8082 - HTTP-Service",
+      "timestamp": "2025-10-15T12:38:35.045704"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: postgres:5432 - PostgreSQL",
+      "timestamp": "2025-10-15T12:38:35.045704"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: postgres:8083 - Unknown-8083",
+      "timestamp": "2025-10-15T12:38:35.045704"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: mysql:80 - HTTP",
+      "timestamp": "2025-10-15T12:38:35.048780"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: mysql:8081 - HTTP-Service",
+      "timestamp": "2025-10-15T12:38:35.048780"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: mysql:8082 - HTTP-Service",
+      "timestamp": "2025-10-15T12:38:35.048780"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: mysql:8080 - HTTP-Alt",
+      "timestamp": "2025-10-15T12:38:35.048780"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: mysql:5432 - PostgreSQL",
+      "timestamp": "2025-10-15T12:38:35.051497"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: mysql:8083 - Unknown-8083",
+      "timestamp": "2025-10-15T12:38:35.051990"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: mysql:3306 - MySQL",
+      "timestamp": "2025-10-15T12:38:35.051990"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: redis:8080 - HTTP-Alt",
+      "timestamp": "2025-10-15T12:38:35.054387"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: redis:80 - HTTP",
+      "timestamp": "2025-10-15T12:38:35.054387"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: redis:8081 - HTTP-Service",
+      "timestamp": "2025-10-15T12:38:35.054387"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: redis:8083 - Unknown-8083",
+      "timestamp": "2025-10-15T12:38:35.054387"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: redis:8082 - HTTP-Service",
+      "timestamp": "2025-10-15T12:38:35.054387"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: redis:5432 - PostgreSQL",
+      "timestamp": "2025-10-15T12:38:35.054387"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: redis:3306 - MySQL",
+      "timestamp": "2025-10-15T12:38:35.054387"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: mongodb:80 - HTTP",
+      "timestamp": "2025-10-15T12:38:35.058961"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: mongodb:8081 - HTTP-Service",
+      "timestamp": "2025-10-15T12:38:35.058961"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: mongodb:8080 - HTTP-Alt",
+      "timestamp": "2025-10-15T12:38:35.058961"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: mongodb:8082 - HTTP-Service",
+      "timestamp": "2025-10-15T12:38:35.058961"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: mongodb:8083 - Unknown-8083",
+      "timestamp": "2025-10-15T12:38:35.058961"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: mongodb:5432 - PostgreSQL",
+      "timestamp": "2025-10-15T12:38:35.062171"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: mongodb:3306 - MySQL",
+      "timestamp": "2025-10-15T12:38:35.062171"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: rabbitmq:80 - HTTP",
+      "timestamp": "2025-10-15T12:38:35.062171"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: rabbitmq:8082 - HTTP-Service",
+      "timestamp": "2025-10-15T12:38:35.062171"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: rabbitmq:8080 - HTTP-Alt",
+      "timestamp": "2025-10-15T12:38:35.062171"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: rabbitmq:8083 - Unknown-8083",
+      "timestamp": "2025-10-15T12:38:35.062171"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: rabbitmq:8081 - HTTP-Service",
+      "timestamp": "2025-10-15T12:38:35.062171"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: rabbitmq:3306 - MySQL",
+      "timestamp": "2025-10-15T12:38:35.062171"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: rabbitmq:5432 - PostgreSQL",
+      "timestamp": "2025-10-15T12:38:35.062171"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: kafka:8080 - HTTP-Alt",
+      "timestamp": "2025-10-15T12:38:35.062171"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: kafka:80 - HTTP",
+      "timestamp": "2025-10-15T12:38:35.069188"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: kafka:8081 - HTTP-Service",
+      "timestamp": "2025-10-15T12:38:35.069804"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: kafka:8082 - HTTP-Service",
+      "timestamp": "2025-10-15T12:38:35.069804"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: kafka:5432 - PostgreSQL",
+      "timestamp": "2025-10-15T12:38:35.069804"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: kafka:8083 - Unknown-8083",
+      "timestamp": "2025-10-15T12:38:35.073690"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: kafka:3306 - MySQL",
+      "timestamp": "2025-10-15T12:38:35.074501"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: elasticsearch:8080 - HTTP-Alt",
+      "timestamp": "2025-10-15T12:38:35.075089"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: elasticsearch:80 - HTTP",
+      "timestamp": "2025-10-15T12:38:35.076210"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: elasticsearch:8081 - HTTP-Service",
+      "timestamp": "2025-10-15T12:38:35.076797"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: elasticsearch:8082 - HTTP-Service",
+      "timestamp": "2025-10-15T12:38:35.078701"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: elasticsearch:8083 - Unknown-8083",
+      "timestamp": "2025-10-15T12:38:35.079308"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: elasticsearch:5432 - PostgreSQL",
+      "timestamp": "2025-10-15T12:38:35.079888"
+    },
+    {
+      "severity": "HIGH",
+      "message": "Internal service accessible: elasticsearch:3306 - MySQL",
+      "timestamp": "2025-10-15T12:38:35.081209"
+    }
+  ],
+  "logs": [
+    {
+      "timestamp": "12:37:56",
+      "level": "info",
+      "message": "\ud83d\udd27 Initializing scan...",
+      "severity": null
+    },
+    {
+      "timestamp": "12:37:56",
+      "level": "info",
+      "message": "\ud83c\udfaf Starting Black Box Testing",
+      "severity": null
+    },
+    {
+      "timestamp": "12:37:56",
+      "level": "info",
+      "message": "\ud83d\udcc1 Phase 1: Extracting Endpoints from Burp Suite",
+      "severity": null
+    },
+    {
+      "timestamp": "12:37:56",
+      "level": "info",
+      "message": "\ud83d\udcca Stats: 1 requests, 1 endpoints",
+      "severity": null
+    },
+    {
+      "timestamp": "12:37:56",
+      "level": "info",
+      "message": "\ud83d\udd10 Found 1 authenticated requests (with JWT/cookies)",
+      "severity": null
+    },
+    {
+      "timestamp": "12:37:56",
+      "level": "info",
+      "message": "  \u2713 GET http://localhost:8083/api/inventory/5/M \ud83d\udd10 [JWT: eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiVVNFUiI...]",
+      "severity": null
+    },
+    {
+      "timestamp": "12:37:56",
+      "level": "info",
+      "message": "\u2705 Extracted 1 unique endpoints from Burp Suite",
+      "severity": null
+    },
+    {
+      "timestamp": "12:37:56",
+      "level": "info",
+      "message": "\ud83d\udd0d Phase 2: Parameter Fuzzing (1 endpoints)",
+      "severity": null
+    },
+    {
+      "timestamp": "12:37:56",
+      "level": "info",
+      "message": "[1/1] Fuzzing: http://localhost:8083/api/inventory/5/M",
+      "severity": null
+    },
+    {
+      "timestamp": "12:38:29",
+      "level": "finding",
+      "message": "Suspicious parameter: callback_url (confidence: 0.04)",
+      "severity": "LOW"
+    },
+    {
+      "timestamp": "12:38:29",
+      "level": "info",
+      "message": "\ud83d\udcde Phase 3: External Callback Testing",
+      "severity": null
+    },
+    {
+      "timestamp": "12:38:29",
+      "level": "info",
+      "message": "[1/1] Testing callback for parameter: callback_url at http://localhost:8083/api/inventory/5/M",
+      "severity": null
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "\u2705 CONFIRMED SSRF via callback_url at http://localhost:8083/api/inventory/5/M - Received 1 callbacks",
+      "severity": "CRITICAL"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "info",
+      "message": "\ud83d\udd0e Phase 4: Internal Network Scanning",
+      "severity": null
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "info",
+      "message": "\ud83c\udfaf Attempting internal network scan using parameter: callback_url",
+      "severity": null
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "info",
+      "message": "\ud83c\udfaf Discovered 158 internal services",
+      "severity": null
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: localhost:80 - HTTP",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: localhost:8080 - HTTP-Alt",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: localhost:8081 - HTTP-Service",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: localhost:8082 - HTTP-Service",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: localhost:443 - HTTPS",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: localhost:8083 - Unknown-8083",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: localhost:5432 - PostgreSQL",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: localhost:8085 - Unknown-8085",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: localhost:8084 - Unknown-8084",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: localhost:6379 - Redis",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: localhost:3306 - MySQL",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: localhost:27017 - MongoDB",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: localhost:11211 - Memcached",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: localhost:3307 - Unknown-3307",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: localhost:5433 - Unknown-5433",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: 127.0.0.1:443 - HTTPS",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: 127.0.0.1:8082 - HTTP-Service",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: 127.0.0.1:5432 - PostgreSQL",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: 127.0.0.1:8080 - HTTP-Alt",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: 127.0.0.1:8081 - HTTP-Service",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: 127.0.0.1:8083 - Unknown-8083",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: 127.0.0.1:8084 - Unknown-8084",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: 127.0.0.1:80 - HTTP",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: 127.0.0.1:3307 - Unknown-3307",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: 127.0.0.1:8085 - Unknown-8085",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: 127.0.0.1:3306 - MySQL",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: 127.0.0.1:6379 - Redis",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: 127.0.0.1:5433 - Unknown-5433",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: 127.0.0.1:27017 - MongoDB",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: 127.0.0.1:11211 - Memcached",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: 172.17.0.1:8080 - HTTP-Alt",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: 172.17.0.1:8083 - Unknown-8083",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: 172.17.0.1:8084 - Unknown-8084",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: 172.17.0.1:443 - HTTPS",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: 172.17.0.1:8081 - HTTP-Service",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: 172.17.0.1:80 - HTTP",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: 172.17.0.1:8082 - HTTP-Service",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: 172.17.0.1:5433 - Unknown-5433",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: 172.17.0.1:5432 - PostgreSQL",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: 172.17.0.1:3307 - Unknown-3307",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: 172.17.0.1:8085 - Unknown-8085",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: 172.17.0.1:11211 - Memcached",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: 172.17.0.1:27017 - MongoDB",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: 172.17.0.1:6379 - Redis",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: 172.17.0.1:3306 - MySQL",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: 172.18.0.1:8085 - Unknown-8085",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: 172.18.0.1:8082 - HTTP-Service",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: 172.18.0.1:80 - HTTP",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: 172.18.0.1:8080 - HTTP-Alt",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: 172.18.0.1:8084 - Unknown-8084",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: 172.18.0.1:443 - HTTPS",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:34",
+      "level": "finding",
+      "message": "Internal service accessible: 172.18.0.1:5432 - PostgreSQL",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: 172.18.0.1:8081 - HTTP-Service",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: 172.18.0.1:8083 - Unknown-8083",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: 172.18.0.1:5433 - Unknown-5433",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: 172.18.0.1:27017 - MongoDB",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: 172.18.0.1:3306 - MySQL",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: 172.18.0.1:6379 - Redis",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: 172.18.0.1:3307 - Unknown-3307",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: 172.18.0.1:11211 - Memcached",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: user-service:8080 - HTTP-Alt",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: user-service:80 - HTTP",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: user-service:8081 - HTTP-Service",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: user-service:8082 - HTTP-Service",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: user-service:8083 - Unknown-8083",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: user-service:5432 - PostgreSQL",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: user-service:3306 - MySQL",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: product-service:80 - HTTP",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: product-service:8081 - HTTP-Service",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: product-service:8082 - HTTP-Service",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: product-service:8080 - HTTP-Alt",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: product-service:3306 - MySQL",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: product-service:8083 - Unknown-8083",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: product-service:5432 - PostgreSQL",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: inventory-service:8081 - HTTP-Service",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: inventory-service:80 - HTTP",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: inventory-service:8080 - HTTP-Alt",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: inventory-service:3306 - MySQL",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: inventory-service:5432 - PostgreSQL",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: inventory-service:8083 - Unknown-8083",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: inventory-service:8082 - HTTP-Service",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: auth-service:8080 - HTTP-Alt",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: auth-service:80 - HTTP",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: auth-service:8081 - HTTP-Service",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: auth-service:8082 - HTTP-Service",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: auth-service:8083 - Unknown-8083",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: auth-service:5432 - PostgreSQL",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: auth-service:3306 - MySQL",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: api-gateway:80 - HTTP",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: api-gateway:8080 - HTTP-Alt",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: api-gateway:8081 - HTTP-Service",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: api-gateway:8082 - HTTP-Service",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: api-gateway:8083 - Unknown-8083",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: api-gateway:5432 - PostgreSQL",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: api-gateway:3306 - MySQL",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: database:80 - HTTP",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: database:8080 - HTTP-Alt",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: database:8081 - HTTP-Service",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: database:8082 - HTTP-Service",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: database:5432 - PostgreSQL",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: database:8083 - Unknown-8083",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: database:3306 - MySQL",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: db:8080 - HTTP-Alt",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: db:80 - HTTP",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: db:8081 - HTTP-Service",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: db:8082 - HTTP-Service",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: db:5432 - PostgreSQL",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: db:3306 - MySQL",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: db:8083 - Unknown-8083",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: postgres:8080 - HTTP-Alt",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: postgres:80 - HTTP",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: postgres:8081 - HTTP-Service",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: postgres:3306 - MySQL",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: postgres:8082 - HTTP-Service",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: postgres:5432 - PostgreSQL",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: postgres:8083 - Unknown-8083",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: mysql:80 - HTTP",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: mysql:8081 - HTTP-Service",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: mysql:8082 - HTTP-Service",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: mysql:8080 - HTTP-Alt",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: mysql:5432 - PostgreSQL",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: mysql:8083 - Unknown-8083",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: mysql:3306 - MySQL",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: redis:8080 - HTTP-Alt",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: redis:80 - HTTP",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: redis:8081 - HTTP-Service",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: redis:8083 - Unknown-8083",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: redis:8082 - HTTP-Service",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: redis:5432 - PostgreSQL",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: redis:3306 - MySQL",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: mongodb:80 - HTTP",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: mongodb:8081 - HTTP-Service",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: mongodb:8080 - HTTP-Alt",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: mongodb:8082 - HTTP-Service",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: mongodb:8083 - Unknown-8083",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: mongodb:5432 - PostgreSQL",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: mongodb:3306 - MySQL",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: rabbitmq:80 - HTTP",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: rabbitmq:8082 - HTTP-Service",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: rabbitmq:8080 - HTTP-Alt",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: rabbitmq:8083 - Unknown-8083",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: rabbitmq:8081 - HTTP-Service",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: rabbitmq:3306 - MySQL",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: rabbitmq:5432 - PostgreSQL",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: kafka:8080 - HTTP-Alt",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: kafka:80 - HTTP",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: kafka:8081 - HTTP-Service",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: kafka:8082 - HTTP-Service",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: kafka:5432 - PostgreSQL",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: kafka:8083 - Unknown-8083",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: kafka:3306 - MySQL",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: elasticsearch:8080 - HTTP-Alt",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: elasticsearch:80 - HTTP",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: elasticsearch:8081 - HTTP-Service",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: elasticsearch:8082 - HTTP-Service",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: elasticsearch:8083 - Unknown-8083",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: elasticsearch:5432 - PostgreSQL",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "finding",
+      "message": "Internal service accessible: elasticsearch:3306 - MySQL",
+      "severity": "HIGH"
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "info",
+      "message": "\u2705 Scan completed successfully! Found 160 findings",
+      "severity": null
+    },
+    {
+      "timestamp": "12:38:35",
+      "level": "info",
+      "message": "\ud83c\udfc1 Scan process terminated",
+      "severity": null
+    }
+  ],
+  "start_time": "2025-10-15T12:37:56.191638",
+  "generated_at": "2025-10-15T12:41:14.542986"
+}

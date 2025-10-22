@@ -97,48 +97,99 @@
                         <input type="number" id="timeout" name="timeout" 
                                value="10" min="1" max="60">
                     </div>
+                    
+                    <!-- HAR File Upload -->
+                    <div class="form-group full-width">
+                        <label for="harFile">
+                            <i class="fas fa-file-archive"></i> Traffic Capture File (Optional - Already Logged In)
+                        </label>
+                        <div class="file-upload-area">
+                            <input type="file" id="harFile" name="har_file" 
+                                   accept=".har,.json,.xml" style="display: none;">
+                            <button type="button" class="btn-secondary" onclick="document.getElementById('harFile').click()">
+                                <i class="fas fa-upload"></i> Choose File
+                            </button>
+                            <span id="harFileName" class="file-name">No file selected</span>
+                            <button type="button" id="clearHarBtn" class="btn-danger" style="display: none;" onclick="clearHARFile()">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <small class="hint">
+                            💡 <strong>Burp Suite:</strong> Proxy → HTTP History → Select All → Right-click → Save → JSON/XML<br>
+                            💡 <strong>Chrome DevTools:</strong> F12 → Network → Right-click → Save as HAR<br>
+                            ⚡ This captures ALL traffic including JWT tokens, cookies, and microservice interactions
+                        </small>
+                    </div>
                 </div>
 
                 <!-- Testing Options -->
                 <div class="options-group">
                     <h3>Testing Modules</h3>
-                    <div class="checkbox-grid">
-                        <label class="checkbox-option">
-                            <input type="checkbox" name="endpoint_discovery" checked>
+                    
+                    <!-- Auto Discovery Mode (Highlighted) -->
+                    <div class="auto-discovery-banner">
+                        <label class="checkbox-option auto-mode">
+                            <input type="checkbox" name="auto_discovery" id="autoDiscovery">
                             <span>
-                                <i class="fas fa-search"></i> Endpoint Discovery
+                                <i class="fas fa-magic"></i> 
+                                <strong>AUTO DISCOVERY MODE</strong>
+                                <small>🚀 Just input domain - tool does everything automatically</small>
                             </span>
                         </label>
-                        <label class="checkbox-option">
-                            <input type="checkbox" name="parameter_fuzzing" checked>
-                            <span>
-                                <i class="fas fa-random"></i> Parameter Fuzzing
-                            </span>
-                        </label>
-                        <label class="checkbox-option">
-                            <input type="checkbox" name="callback_testing" checked>
-                            <span>
-                                <i class="fas fa-phone"></i> Callback Testing
-                            </span>
-                        </label>
-                        <label class="checkbox-option">
-                            <input type="checkbox" name="internal_scanning" checked>
-                            <span>
-                                <i class="fas fa-network-wired"></i> Internal Scanning
-                            </span>
-                        </label>
-                        <label class="checkbox-option">
-                            <input type="checkbox" name="docker_inspection">
-                            <span>
-                                <i class="fab fa-docker"></i> Docker Inspection
-                            </span>
-                        </label>
-                        <label class="checkbox-option">
-                            <input type="checkbox" name="code_scanning">
-                            <span>
-                                <i class="fas fa-file-code"></i> Code Scanning
-                            </span>
-                        </label>
+                        <div class="auto-discovery-info">
+                            <p>✨ <strong>Fully Automated Workflow:</strong></p>
+                            <ul>
+                                <li>🔍 Auto-crawl website & discover all endpoints</li>
+                                <li>🎯 Intelligent parameter detection & testing</li>
+                                <li>🧠 Behavioral SSRF analysis (time-based, error-based)</li>
+                                <li>✅ Automatic callback confirmation</li>
+                                <li>📊 Smart confidence scoring</li>
+                            </ul>
+                            <p class="note">💡 When enabled, other modules are automated - no manual config needed!</p>
+                        </div>
+                    </div>
+                    
+                    <!-- Manual Testing Options -->
+                    <div id="manualOptions">
+                        <h4 style="margin-top: 20px; margin-bottom: 10px; color: #666;">Manual Testing Modules</h4>
+                        <div class="checkbox-grid">
+                            <label class="checkbox-option">
+                                <input type="checkbox" name="endpoint_discovery" checked>
+                                <span>
+                                    <i class="fas fa-search"></i> Endpoint Discovery
+                                </span>
+                            </label>
+                            <label class="checkbox-option">
+                                <input type="checkbox" name="parameter_fuzzing" checked>
+                                <span>
+                                    <i class="fas fa-random"></i> Parameter Fuzzing
+                                </span>
+                            </label>
+                            <label class="checkbox-option">
+                                <input type="checkbox" name="callback_testing" checked>
+                                <span>
+                                    <i class="fas fa-phone"></i> Callback Testing
+                                </span>
+                            </label>
+                            <label class="checkbox-option">
+                                <input type="checkbox" name="internal_scanning" checked>
+                                <span>
+                                    <i class="fas fa-network-wired"></i> Internal Scanning
+                                </span>
+                            </label>
+                            <label class="checkbox-option">
+                                <input type="checkbox" name="docker_inspection">
+                                <span>
+                                    <i class="fab fa-docker"></i> Docker Inspection
+                                </span>
+                            </label>
+                            <label class="checkbox-option">
+                                <input type="checkbox" name="code_scanning">
+                                <span>
+                                    <i class="fas fa-file-code"></i> Code Scanning
+                                </span>
+                            </label>
+                        </div>
                     </div>
                 </div>
 

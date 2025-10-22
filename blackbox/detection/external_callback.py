@@ -122,25 +122,54 @@ class CallbackServer:
         
         addresses = []
         
-        # Strategy 1: host.docker.internal (Docker Desktop)
+        # Strategy 1: host.docker.internal (Docker Desktop - Windows/Mac)
         if platform.system() in ['Windows', 'Darwin']:
             addresses.append('host.docker.internal')
         
-        # Strategy 2: Get actual local IP
+        # Strategy 2: Docker bridge gateway (Linux)
+        # Common Docker bridge IPs
+        addresses.append('172.17.0.1')  # Default Docker bridge
+        addresses.append('172.18.0.1')  # Custom Docker networks
+        
+        # Strategy 3: Get actual local IP (all interfaces)
         try:
+            # Primary network interface
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             s.connect(("8.8.8.8", 80))
             local_ip = s.getsockname()[0]
             s.close()
-            addresses.append(local_ip)
+            if local_ip not in addresses:
+                addresses.append(local_ip)
         except:
             pass
         
-        # Strategy 3: localhost (fallback)
+        # Try to get all network interfaces
+        try:
+            hostname = socket.gethostname()
+            all_ips = socket.gethostbyname_ex(hostname)[2]
+            for ip in all_ips:
+                if ip not in addresses and not ip.startswith('127.'):
+                    addresses.append(ip)
+        except:
+            pass
+        
+        # Strategy 4: localhost variants (last resort)
         addresses.append('localhost')
         addresses.append('127.0.0.1')
         
-        return addresses
+        # Strategy 5: IPv6 localhost (some services might support)
+        addresses.append('[::1]')
+        addresses.append('::1')
+        
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_addresses = []
+        for addr in addresses:
+            if addr not in seen:
+                seen.add(addr)
+                unique_addresses.append(addr)
+        
+        return unique_addresses
     
     def get_callback_url(self, path: str = '', address: str = None) -> str:
         """

@@ -17,6 +17,9 @@ class BlackBoxConfig:
     wordlist_path: str = "wordlists/common.txt"
     callback_server: Optional[str] = None
     
+    # Auto Discovery Mode (Full Automation)
+    auto_discovery: bool = False
+    
     # Reconnaissance settings
     endpoint_discovery: bool = True
     parameter_fuzzing: bool = True

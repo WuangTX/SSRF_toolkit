@@ -21,6 +21,119 @@ Mở browser và truy cập: **http://localhost:5000**
 
 ---
 
+## 🎯 3 Cách Sử Dụng Tool (Từ Dễ → Khó)
+
+### ⭐ **Cách 1: Tự Động Hoàn Toàn** (Đơn giản nhất - Không cần Burp)
+**Người dùng CHỈ cần nhập URL → Tool tự động làm hết**
+
+1. Nhập base URL vào ô input (ví dụ: `http://localhost:3000`)
+2. Click "Start Scan"
+3. Tool tự động:
+   - Quét robots.txt, sitemap.xml
+   - Parse JavaScript tìm API endpoints
+   - Brute-force với wordlist
+   - Spider trang web
+   - Fuzz tất cả parameters
+   - Test SSRF callback
+
+**✅ Ưu điểm:** Không cần làm gì thêm, chạy ngay
+
+**❌ Nhược điểm:** Chỉ tìm được public endpoints, không thấy endpoints sau login
+
+**🎯 Phù hợp:** Quick scan, public API, initial reconnaissance
+
+---
+
+### 🔥 **Cách 2: Import Traffic Capture** (Khuyến nghị - Đã Login)
+**Người dùng đã browse qua Burp/Chrome → Export → Upload → Tool test**
+
+#### 🎯 Option 2A: Burp Suite (TỐT NHẤT nếu đã dùng Burp)
+
+**Bước người dùng làm:**
+1. **Đã browse** qua ứng dụng trong Burp Suite (đã login)
+2. Burp Suite → **Proxy → HTTP History**
+3. **Select All** requests (Ctrl+A) hoặc chọn specific requests
+4. **Right-click → Save items** → Chọn **JSON** hoặc **XML**
+5. Upload file vào tool (nút "Choose File" trên UI)
+
+**✅ Ưu điểm Burp Suite:**
+- ⚡ **ĐÃ CÓ SẴN** traffic từ lúc test
+- 🔐 Có **JWT tokens, cookies** đầy đủ
+- 🎯 Thấy **requests giữa các microservices**
+- 🚀 Không cần browse lại từ đầu
+
+**📖 Chi tiết:** [BURP_SUITE_GUIDE.md](../BURP_SUITE_GUIDE.md)
+
+---
+
+#### 🌐 Option 2B: Chrome DevTools HAR
+
+**Bước người dùng làm:**
+1. Mở Chrome → **F12** (DevTools) → Tab **Network**
+2. Browse trang web như bình thường:
+   - Login với tài khoản
+   - Click các button
+   - Submit form
+   - Thực hiện các action như user thật
+3. Chuột phải vào Network tab → **"Save all as HAR with content"**
+4. Upload file HAR vào tool
+
+---
+
+**Tool tự động (cả 2 options):**
+- Parse file (auto-detect Burp/HAR)
+- Extract TẤT CẢ requests (kể cả có JWT token)
+- Fuzz các parameters với auth headers
+- Test SSRF với credentials thật
+
+**✅ Ưu điểm chung:** 
+- Thấy 100% traffic thực tế
+- Có sẵn JWT token và cookies
+- Test được endpoints sau login
+- Đơn giản, chỉ mất 2-5 phút
+
+**🎯 Phù hợp:** Authenticated apps, microservices, real-world testing
+
+---
+
+### ⚡ **Cách 3: Proxy Mode** (Nâng cao)
+**Tool capture real-time như Burp Suite**
+
+**Bước người dùng làm:**
+1. Config Chrome proxy:
+   - Settings → Search "proxy"
+   - Manual proxy: `localhost:8080`
+2. Browse trang web như bình thường
+3. Tool capture mọi request real-time
+
+**✅ Ưu điểm:** 
+- Capture real-time
+- Giống Burp Suite
+- Tự động liên tục
+
+**❌ Nhược điểm:**
+- Phức tạp (cần config proxy)
+- HTTPS cần install certificate
+- Port conflict trên Windows
+
+**🎯 Phù hợp:** Professional pentesting, continuous monitoring
+
+---
+
+## 📊 So Sánh 3 Cách
+
+| Tiêu chí | Cách 1: Auto | Cách 2: HAR | Cách 3: Proxy |
+|----------|--------------|-------------|---------------|
+| **Người dùng làm** | Chỉ nhập URL | Export HAR | Config proxy |
+| **Phát hiện endpoint** | 50% | 100% ⭐ | 100% ⭐ |
+| **Có JWT token** | ❌ | ✅ | ✅ |
+| **Độ khó** | Rất dễ ⭐ | Dễ ⭐⭐ | Khó ⭐⭐⭐⭐ |
+| **Thời gian setup** | 0 phút | 5 phút | 15+ phút |
+
+**💡 Khuyến nghị:** Dùng **Cách 2 (HAR Import)** cho kết quả tốt nhất với effort thấp
+
+---
+
 ## ✨ Features
 
 ### 🎯 Dashboard Chính

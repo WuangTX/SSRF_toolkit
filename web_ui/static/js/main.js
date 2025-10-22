@@ -26,12 +26,44 @@ const elapsedTime = document.getElementById('elapsedTime');
 const findingsList = document.getElementById('findingsList');
 const consoleDiv = document.getElementById('console');
 const clearConsoleBtn = document.getElementById('clearConsoleBtn');
+const autoDiscoveryCheckbox = document.getElementById('autoDiscovery');
+const manualOptionsDiv = document.getElementById('manualOptions');
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
     checkScanStatus();
+    setupHARFileUpload();
+    setupAutoDiscoveryToggle();
 });
+
+// Auto Discovery Toggle
+function setupAutoDiscoveryToggle() {
+    if (!autoDiscoveryCheckbox) return;
+    
+    autoDiscoveryCheckbox.addEventListener('change', (e) => {
+        const manualCheckboxes = manualOptionsDiv.querySelectorAll('input[type="checkbox"]');
+        
+        if (e.target.checked) {
+            // Auto mode enabled - disable manual options
+            manualCheckboxes.forEach(cb => {
+                cb.disabled = true;
+                cb.parentElement.style.opacity = '0.5';
+            });
+            manualOptionsDiv.style.pointerEvents = 'none';
+            
+            // Show info message
+            logToConsole('info', '🤖 Auto Discovery Mode enabled - all testing will be automated');
+        } else {
+            // Manual mode - enable options
+            manualCheckboxes.forEach(cb => {
+                cb.disabled = false;
+                cb.parentElement.style.opacity = '1';
+            });
+            manualOptionsDiv.style.pointerEvents = 'auto';
+        }
+    });
+}
 
 // Event Listeners
 function setupEventListeners() {
@@ -85,27 +117,42 @@ function setupEventListeners() {
 // Start Scan
 async function startScan() {
     const formData = new FormData(scanForm);
-    const data = {
-        mode: formData.get('mode'),
-        target: formData.get('target'),
-        source_path: formData.get('source_path'),
-        timeout: parseInt(formData.get('timeout')),
-        endpoint_discovery: formData.get('endpoint_discovery') === 'on',
-        parameter_fuzzing: formData.get('parameter_fuzzing') === 'on',
-        callback_testing: formData.get('callback_testing') === 'on',
-        internal_scanning: formData.get('internal_scanning') === 'on',
-        docker_inspection: formData.get('docker_inspection') === 'on',
-        code_scanning: formData.get('code_scanning') === 'on'
+    
+    // Check if HAR file is provided
+    const harFile = formData.get('har_file');
+    
+    // Prepare request
+    let requestOptions = {
+        method: 'POST'
     };
+    
+    if (harFile && harFile.size > 0) {
+        // If HAR file provided, send as multipart/form-data
+        requestOptions.body = formData;
+        addConsoleLog('info', `📤 Uploading HAR file: ${harFile.name}...`);
+    } else {
+        // Standard JSON request
+        const data = {
+            mode: formData.get('mode'),
+            target: formData.get('target'),
+            source_path: formData.get('source_path'),
+            timeout: parseInt(formData.get('timeout')),
+            endpoint_discovery: formData.get('endpoint_discovery') === 'on',
+            parameter_fuzzing: formData.get('parameter_fuzzing') === 'on',
+            callback_testing: formData.get('callback_testing') === 'on',
+            internal_scanning: formData.get('internal_scanning') === 'on',
+            docker_inspection: formData.get('docker_inspection') === 'on',
+            code_scanning: formData.get('code_scanning') === 'on'
+        };
+        
+        requestOptions.headers = {
+            'Content-Type': 'application/json'
+        };
+        requestOptions.body = JSON.stringify(data);
+    }
 
     try {
-        const response = await fetch('/api/scan/start', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(data)
-        });
+        const response = await fetch('/api/scan/start', requestOptions);
 
         const result = await response.json();
 
@@ -488,6 +535,37 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+// HAR File Upload Handling
+function setupHARFileUpload() {
+    const harFileInput = document.getElementById('harFile');
+    const harFileName = document.getElementById('harFileName');
+    const clearHarBtn = document.getElementById('clearHarBtn');
+    
+    if (harFileInput) {
+        harFileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                harFileName.textContent = file.name;
+                harFileName.classList.add('selected');
+                clearHarBtn.style.display = 'inline-block';
+                addConsoleLog('info', `📁 HAR file selected: ${file.name} (${formatBytes(file.size)})`);
+            }
+        });
+    }
+}
+
+function clearHARFile() {
+    const harFileInput = document.getElementById('harFile');
+    const harFileName = document.getElementById('harFileName');
+    const clearHarBtn = document.getElementById('clearHarBtn');
+    
+    harFileInput.value = '';
+    harFileName.textContent = 'No file selected';
+    harFileName.classList.remove('selected');
+    clearHarBtn.style.display = 'none';
+    addConsoleLog('info', '🗑️ HAR file cleared');
 }
 
 // Keyboard Shortcuts
