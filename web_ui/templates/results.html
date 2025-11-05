@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SSRF Toolkit - Scan Results</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            background: #f5f5f5;
+        }
+        
+        .results-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px 0;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .results-header .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 0 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .results-title {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .results-title h1 {
+            margin: 0;
+            font-size: 1.8em;
+        }
+        
+        .results-actions {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.95em;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+        
+        .btn-danger {
+            background: #e74c3c;
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            background: #c0392b;
+        }
+        
+        .btn-success {
+            background: #27ae60;
+            color: white;
+        }
+        
+        .btn-success:hover {
+            background: #229954;
+        }
+        
+        .results-container {
+            max-width: 1400px;
+            margin: 30px auto;
+            padding: 0 20px;
+        }
+        
+        .results-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .panel {
+            background: white;
+            border-radius: 10px;
+            padding: 25px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .panel h2 {
+            margin-top: 0;
+            margin-bottom: 20px;
+            color: #333;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 1.3em;
+        }
+        
+        .progress-panel {
+            grid-column: 1 / -1;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 30px;
+            background: #f0f0f0;
+            border-radius: 15px;
+            overflow: hidden;
+            margin-bottom: 15px;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            width: 0%;
+            transition: width 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+        }
+        
+        .progress-info {
+            display: flex;
+            justify-content: space-between;
+            color: #666;
+            font-size: 0.95em;
+        }
+        
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: bold;
+        }
+        
+        .status-badge.running {
+            background: #fff3cd;
+            color: #856404;
+        }
+        
+        .status-badge.completed {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .status-badge.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .logs-container {
+            max-height: 400px;
+            overflow-y: auto;
+            background: #f8f9fa;
+            border-radius: 5px;
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+        
+        .log-entry {
+            padding: 5px 0;
+            border-bottom: 1px solid #e9ecef;
+        }
+        
+        .log-entry:last-child {
+            border-bottom: none;
+        }
+        
+        .log-entry .timestamp {
+            color: #6c757d;
+            margin-right: 10px;
+        }
+        
+        .endpoint-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .endpoint-item {
+            padding: 12px;
+            background: #f8f9fa;
+            border-left: 3px solid #667eea;
+            margin-bottom: 10px;
+            border-radius: 5px;
+            transition: all 0.2s ease;
+        }
+        
+        .endpoint-item:hover {
+            background: #e9ecef;
+            transform: translateX(5px);
+        }
+        
+        .endpoint-url {
+            font-weight: bold;
+            color: #333;
+            word-break: break-all;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
+        .severity-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+        
+        .severity-indicator.critical {
+            background: #dc3545;
+            box-shadow: 0 0 5px rgba(220, 53, 69, 0.5);
+        }
+        
+        .severity-indicator.high {
+            background: #fd7e14;
+            box-shadow: 0 0 5px rgba(253, 126, 20, 0.5);
+        }
+        
+        .severity-indicator.medium {
+            background: #ffc107;
+            box-shadow: 0 0 5px rgba(255, 193, 7, 0.5);
+        }
+        
+        .severity-indicator.low {
+            background: #28a745;
+            box-shadow: 0 0 5px rgba(40, 167, 69, 0.5);
+        }
+        
+        .endpoint-badges {
+            display: flex;
+            gap: 5px;
+            margin-left: auto;
+        }
+        
+        .badge {
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 0.7em;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .badge-danger {
+            background: #dc3545;
+            color: white;
+        }
+        
+        .badge-warning {
+            background: #ffc107;
+            color: #212529;
+        }
+        
+        .badge-info {
+            background: #17a2b8;
+            color: white;
+        }
+        
+        .badge-success {
+            background: #28a745;
+            color: white;
+        }
+        
+        .badge-secondary {
+            background: #6c757d;
+            color: white;
+        }
+        
+        .endpoint-meta {
+            display: flex;
+            gap: 15px;
+            margin-top: 5px;
+            font-size: 0.85em;
+            color: #666;
+        }
+        
+        .finding-item {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            border-left: 4px solid;
+            animation: slideIn 0.3s ease-out;
+        }
+        
+        @keyframes slideIn {
+            from {
+                transform: translateX(-20px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        
+        .finding-item.critical {
+            background: #fee;
+            border-color: #dc3545;
+        }
+        
+        .finding-item.high {
+            background: #fff3cd;
+            border-color: #ffc107;
+        }
+        
+        .finding-item.medium {
+            background: #e7f3ff;
+            border-color: #0dcaf0;
+        }
+        
+        .finding-item.low {
+            background: #f0f0f0;
+            border-color: #6c757d;
+        }
+        
+        .finding-severity {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 3px;
+            font-size: 0.8em;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+        
+        .finding-severity.critical {
+            background: #dc3545;
+            color: white;
+        }
+        
+        .finding-severity.high {
+            background: #ffc107;
+            color: #333;
+        }
+        
+        .finding-severity.medium {
+            background: #0dcaf0;
+            color: white;
+        }
+        
+        .finding-severity.low {
+            background: #6c757d;
+            color: white;
+        }
+        
+        .finding-message {
+            color: #333;
+            line-height: 1.6;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+        
+        .empty-state i {
+            font-size: 3em;
+            margin-bottom: 15px;
+            opacity: 0.3;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-size: 2.5em;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        .stat-label {
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+        
+        .notification {
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            animation: slideIn 0.3s ease-out;
+        }
+        
+        .notification i {
+            margin-right: 12px;
+            font-size: 1.2em;
+        }
+        
+        .notification.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border-left: 4px solid #17a2b8;
+        }
+        
+        .notification.success {
+            background: #d4edda;
+            color: #155724;
+            border-left: 4px solid #28a745;
+        }
+        
+        .notification.warning {
+            background: #fff3cd;
+            color: #856404;
+            border-left: 4px solid #ffc107;
+        }
+        
+        .notification.error {
+            background: #f8d7da;
+            color: #721c24;
+            border-left: 4px solid #dc3545;
+        }
+        
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(0,0,0,.1);
+            border-radius: 50%;
+            border-top-color: #667eea;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <div class="results-header">
+        <div class="container">
+            <div class="results-title">
+                <i class="fas fa-chart-line"></i>
+                <h1>Scan Results - Real-time Monitoring</h1>
+            </div>
+            <div class="results-actions">
+                <a href="/config" class="btn btn-secondary">
+                    <i class="fas fa-arrow-left"></i> Back to Config
+                </a>
+                <button id="exportBtn" class="btn btn-success">
+                    <i class="fas fa-download"></i> Export Report
+                </button>
+                <button id="stopBtn" class="btn btn-danger">
+                    <i class="fas fa-stop"></i> Stop Scan
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Results Container -->
+    <div class="results-container">
+        <!-- Statistics -->
+        <div class="stats-grid" id="statsGrid">
+            <div class="stat-card">
+                <div class="stat-value" id="statEndpoints">0</div>
+                <div class="stat-label">Endpoints Found</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="statParams">0</div>
+                <div class="stat-label">Parameters Tested</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="statFindings">0</div>
+                <div class="stat-label">Findings</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="statCritical">0</div>
+                <div class="stat-label">Critical Issues</div>
+            </div>
+        </div>
+        
+        <!-- Notifications -->
+        <div id="notifications"></div>
+        
+        <div class="results-grid">
+            <!-- Progress Panel -->
+            <div class="panel progress-panel" id="progressPanel">
+                <h2>
+                    <i class="fas fa-tasks"></i> 
+                    Scan Progress
+                    <span class="status-badge running" id="statusBadge">
+                        <span class="spinner"></span> Running
+                    </span>
+                </h2>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill">0%</div>
+                </div>
+                <div class="progress-info">
+                    <span id="progressPhase">Initializing...</span>
+                    <span id="progressTime">Elapsed: 0s</span>
+                </div>
+            </div>
+            
+            <!-- Logs Panel -->
+            <div class="panel">
+                <h2><i class="fas fa-terminal"></i> Activity Logs</h2>
+                <div class="logs-container" id="logsContainer">
+                    <div class="empty-state">
+                        <i class="fas fa-hourglass-start"></i>
+                        <p>Waiting for scan to start...</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Endpoints Panel -->
+            <div class="panel">
+                <h2><i class="fas fa-sitemap"></i> Discovered Endpoints (<span id="endpointCount">0</span>)</h2>
+                <div class="endpoint-list" id="endpointsList">
+                    <div class="empty-state">
+                        <i class="fas fa-search"></i>
+                        <p>No endpoints discovered yet...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Findings Panel (Full Width) -->
+        <div class="panel">
+            <h2><i class="fas fa-bug"></i> Security Findings (<span id="findingCount">0</span>)</h2>
+            <div id="findingsList">
+                <div class="empty-state">
+                    <i class="fas fa-shield-alt"></i>
+                    <p>No security findings yet. This is good news!</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script>
+        // Initialize socket
+        const socket = io();
+        
+        // DOM Elements
+        const progressFill = document.getElementById('progressFill');
+        const progressPhase = document.getElementById('progressPhase');
+        const progressTime = document.getElementById('progressTime');
+        const statusBadge = document.getElementById('statusBadge');
+        const logsContainer = document.getElementById('logsContainer');
+        const endpointsList = document.getElementById('endpointsList');
+        const findingsList = document.getElementById('findingsList');
+        const notifications = document.getElementById('notifications');
+        const stopBtn = document.getElementById('stopBtn');
+        const exportBtn = document.getElementById('exportBtn');
+        
+        // Stats counters
+        const statEndpoints = document.getElementById('statEndpoints');
+        const statParams = document.getElementById('statParams');
+        const statFindings = document.getElementById('statFindings');
+        const statCritical = document.getElementById('statCritical');
+        const endpointCount = document.getElementById('endpointCount');
+        const findingCount = document.getElementById('findingCount');
+        
+        // State
+        let startTime = Date.now();
+        let timerInterval;
+        let endpoints = [];
+        let findings = [];
+        let logs = [];
+        
+        // Update timer
+        function updateTimer() {
+            const elapsed = Math.floor((Date.now() - startTime) / 1000);
+            const minutes = Math.floor(elapsed / 60);
+            const seconds = elapsed % 60;
+            progressTime.textContent = `Elapsed: ${minutes}m ${seconds}s`;
+        }
+        
+        // Start timer
+        timerInterval = setInterval(updateTimer, 1000);
+        
+        // Add notification
+        function addNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            
+            let icon = 'fa-info-circle';
+            if (type === 'error') icon = 'fa-exclamation-circle';
+            if (type === 'success') icon = 'fa-check-circle';
+            if (type === 'warning') icon = 'fa-exclamation-triangle';
+            
+            notification.innerHTML = `
+                <i class="fas ${icon}"></i>
+                <span>${message}</span>
+            `;
+            
+            notifications.insertBefore(notification, notifications.firstChild);
+            
+            // Auto-remove after 5 seconds
+            setTimeout(() => {
+                notification.remove();
+            }, 5000);
+        }
+        
+        // Add log entry
+        function addLog(message) {
+            if (logs.length === 0) {
+                logsContainer.innerHTML = '';
+            }
+            
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.className = 'log-entry';
+            logEntry.innerHTML = `
+                <span class="timestamp">[${timestamp}]</span>
+                <span>${message}</span>
+            `;
+            
+            logsContainer.appendChild(logEntry);
+            logsContainer.scrollTop = logsContainer.scrollHeight;
+            logs.push(message);
+        }
+        
+        // Add endpoint
+        function addEndpoint(endpoint) {
+            if (endpoints.length === 0) {
+                endpointsList.innerHTML = '';
+            }
+            
+            const endpointItem = document.createElement('div');
+            endpointItem.className = 'endpoint-item';
+            
+            // Get severity color
+            let severityClass = 'low';
+            if (endpoint.severity === 'critical') severityClass = 'critical';
+            else if (endpoint.severity === 'high') severityClass = 'high';
+            else if (endpoint.severity === 'medium') severityClass = 'medium';
+            
+            // SSRF potential indicator
+            let ssrfIndicator = '';
+            if (endpoint.ssrf_potential && endpoint.ssrf_potential !== 'unknown') {
+                const ssrfColor = endpoint.ssrf_potential === 'high' ? 'danger' : 
+                                endpoint.ssrf_potential === 'medium' ? 'warning' : 'info';
+                ssrfIndicator = `<span class="badge badge-${ssrfColor}">SSRF: ${endpoint.ssrf_potential}</span>`;
+            }
+            
+            // POST support indicator
+            let postIndicator = endpoint.accepts_post ? 
+                '<span class="badge badge-success">POST ✓</span>' : 
+                '<span class="badge badge-secondary">GET only</span>';
+            
+            endpointItem.innerHTML = `
+                <div class="endpoint-url">
+                    <span class="severity-indicator ${severityClass}"></span>
+                    ${endpoint.url}
+                    <span class="endpoint-badges">
+                        ${ssrfIndicator}
+                        ${postIndicator}
+                    </span>
+                </div>
+                <div class="endpoint-meta">
+                    <span><i class="fas fa-info-circle"></i> Status: ${endpoint.status_code || 'N/A'}</span>
+                    <span><i class="fas fa-file"></i> Size: ${endpoint.content_length || 0} bytes</span>
+                    <span><i class="fas fa-tag"></i> ${endpoint.content_type || 'unknown'}</span>
+                    <span><i class="fas fa-layer-group"></i> Source: ${endpoint.source || 'unknown'}</span>
+                    <span><i class="fas fa-shield-alt"></i> Severity: ${endpoint.severity || 'low'}</span>
+                    <span><i class="fas fa-clock"></i> ${(endpoint.response_time || 0).toFixed(3)}s</span>
+                </div>
+            `;
+            
+            endpointsList.appendChild(endpointItem);
+            endpoints.push(endpoint);
+            
+            // Update counters
+            statEndpoints.textContent = endpoints.length;
+            endpointCount.textContent = endpoints.length;
+        }
+        
+        // Add finding
+        function addFinding(severity, message) {
+            if (findings.length === 0) {
+                findingsList.innerHTML = '';
+            }
+            
+            const findingItem = document.createElement('div');
+            findingItem.className = `finding-item ${severity.toLowerCase()}`;
+            findingItem.innerHTML = `
+                <div class="finding-severity ${severity.toLowerCase()}">${severity}</div>
+                <div class="finding-message">${message}</div>
+            `;
+            
+            findingsList.insertBefore(findingItem, findingsList.firstChild);
+            findings.push({ severity, message });
+            
+            // Update counters
+            statFindings.textContent = findings.length;
+            findingCount.textContent = findings.length;
+            
+            const critical = findings.filter(f => f.severity === 'CRITICAL').length;
+            statCritical.textContent = critical;
+            
+            // Show notification for critical findings
+            if (severity === 'CRITICAL') {
+                addNotification(`🚨 Critical vulnerability found!`, 'error');
+            }
+        }
+        
+        // Socket event handlers
+        socket.on('connect', function() {
+            console.log('Connected to server');
+            addNotification('✅ Connected to scan server', 'success');
+        });
+        
+        socket.on('disconnect', function() {
+            console.log('Disconnected from server');
+            addNotification('⚠️ Connection lost. Trying to reconnect...', 'warning');
+        });
+        
+        socket.on('progress', function(data) {
+            progressFill.style.width = data.percent + '%';
+            progressFill.textContent = data.percent + '%';
+            progressPhase.textContent = data.phase || 'Processing...';
+        });
+        
+        socket.on('log', function(data) {
+            addLog(data.message);
+        });
+        
+        socket.on('endpoint', function(data) {
+            addEndpoint(data);
+        });
+        
+        socket.on('finding', function(data) {
+            addFinding(data.severity, data.message);
+        });
+        
+        socket.on('scan_complete', function(data) {
+            clearInterval(timerInterval);
+            statusBadge.innerHTML = '<i class="fas fa-check-circle"></i> Completed';
+            statusBadge.className = 'status-badge completed';
+            addNotification('✅ Scan completed successfully!', 'success');
+            stopBtn.disabled = true;
+        });
+        
+        socket.on('scan_error', function(data) {
+            clearInterval(timerInterval);
+            statusBadge.innerHTML = '<i class="fas fa-times-circle"></i> Error';
+            statusBadge.className = 'status-badge error';
+            addNotification(`❌ Scan error: ${data.message}`, 'error');
+        });
+        
+        // Stop button
+        stopBtn.addEventListener('click', function() {
+            if (confirm('Are you sure you want to stop the scan?')) {
+                socket.emit('stop_scan');
+                clearInterval(timerInterval);
+                statusBadge.innerHTML = '<i class="fas fa-stop-circle"></i> Stopped';
+                statusBadge.className = 'status-badge error';
+                addNotification('⏹️ Scan stopped by user', 'warning');
+                stopBtn.disabled = true;
+            }
+        });
+        
+        // Export button
+        exportBtn.addEventListener('click', async function() {
+            try {
+                const response = await fetch('/api/report/export', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ format: 'json' })
+                });
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `scan_report_${Date.now()}.json`;
+                    a.click();
+                    addNotification('✅ Report exported successfully!', 'success');
+                } else {
+                    addNotification('❌ Failed to export report', 'error');
+                }
+            } catch (error) {
+                addNotification(`❌ Export error: ${error.message}`, 'error');
+            }
+        });
+        
+        // Initial message
+        addNotification('🚀 Scan started! Monitoring in real-time...', 'info');
+    </script>
+</body>
+</html>

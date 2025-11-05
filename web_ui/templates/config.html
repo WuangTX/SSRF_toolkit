@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SSRF Toolkit - Configuration</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        
+        .config-container {
+            max-width: 900px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        
+        .config-card {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        
+        .config-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+        
+        .config-header h1 {
+            margin: 0 0 10px 0;
+            font-size: 2.5em;
+        }
+        
+        .config-header p {
+            margin: 0;
+            opacity: 0.9;
+            font-size: 1.1em;
+        }
+        
+        .config-body {
+            padding: 40px;
+        }
+        
+        .welcome-tips {
+            background: #f8f9ff;
+            border-left: 4px solid #667eea;
+            padding: 20px;
+            margin-bottom: 30px;
+            border-radius: 5px;
+        }
+        
+        .welcome-tips h3 {
+            margin-top: 0;
+            color: #667eea;
+        }
+        
+        .tip-list {
+            list-style: none;
+            padding: 0;
+        }
+        
+        .tip-list li {
+            padding: 8px 0;
+            display: flex;
+            align-items: center;
+        }
+        
+        .tip-list li i {
+            color: #667eea;
+            margin-right: 10px;
+            width: 20px;
+        }
+        
+        .form-section {
+            margin-bottom: 30px;
+        }
+        
+        .form-section h3 {
+            color: #333;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+        
+        .notification-area {
+            margin-bottom: 20px;
+            min-height: 50px;
+        }
+        
+        .notification {
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            animation: slideIn 0.3s ease-out;
+        }
+        
+        @keyframes slideIn {
+            from {
+                transform: translateX(-20px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        
+        .notification i {
+            margin-right: 12px;
+            font-size: 1.2em;
+        }
+        
+        .notification.error {
+            background: #fee;
+            color: #c33;
+            border-left: 4px solid #c33;
+        }
+        
+        .notification.success {
+            background: #efe;
+            color: #3a3;
+            border-left: 4px solid #3a3;
+        }
+        
+        .notification.info {
+            background: #eef;
+            color: #339;
+            border-left: 4px solid #339;
+        }
+        
+        .notification.loading {
+            background: #fff3cd;
+            color: #856404;
+            border-left: 4px solid #ffc107;
+        }
+        
+        .help-text {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 5px;
+            font-size: 0.9em;
+            color: #666;
+        }
+        
+        .btn-start {
+            width: 100%;
+            padding: 15px;
+            font-size: 1.2em;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: bold;
+        }
+        
+        .btn-start:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-start:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <div class="config-container">
+        <div class="config-card">
+            <!-- Header -->
+            <div class="config-header">
+                <i class="fas fa-shield-alt" style="font-size: 3em; margin-bottom: 15px;"></i>
+                <h1>SSRF Pentest Toolkit</h1>
+                <p>Configure your security scan and detect SSRF vulnerabilities</p>
+            </div>
+            
+            <!-- Body -->
+            <div class="config-body">
+                <!-- Welcome Tips -->
+                <div class="welcome-tips">
+                    <h3><i class="fas fa-lightbulb"></i> Quick Start Guide</h3>
+                    <ul class="tip-list">
+                        <li><i class="fas fa-check-circle"></i> Enter your target URL (e.g., https://example.com)</li>
+                        <li><i class="fas fa-check-circle"></i> Choose testing mode (Auto Discovery recommended)</li>
+                        <li><i class="fas fa-check-circle"></i> Click "Start Scan" and we'll do the rest!</li>
+                        <li><i class="fas fa-info-circle"></i> Advanced: Upload HAR/Burp files for targeted testing</li>
+                    </ul>
+                </div>
+                
+                <!-- Notifications -->
+                <div class="notification-area" id="notifications"></div>
+                
+                <!-- Configuration Form -->
+                <form id="scanForm">
+                    <!-- Target URL -->
+                    <div class="form-section">
+                        <h3><i class="fas fa-bullseye"></i> Target Configuration</h3>
+                        <div class="form-group">
+                            <label for="targetUrl">Target URL *</label>
+                            <input type="url" id="targetUrl" name="target_url" 
+                                   placeholder="https://example.com" required>
+                            <div class="help-text">
+                                <i class="fas fa-info-circle"></i> 
+                                Enter the base URL of your target application. Make sure it's accessible and you have permission to test.
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Testing Mode -->
+                    <div class="form-section">
+                        <h3><i class="fas fa-cog"></i> Testing Mode</h3>
+                        <div class="mode-selector">
+                            <label class="mode-option">
+                                <input type="radio" name="mode" value="blackbox" checked>
+                                <span>
+                                    <i class="fas fa-box"></i>
+                                    <strong>Black Box</strong>
+                                    <small>External testing only</small>
+                                </span>
+                            </label>
+                            <label class="mode-option">
+                                <input type="radio" name="mode" value="graybox">
+                                <span>
+                                    <i class="fas fa-adjust"></i>
+                                    <strong>Gray Box</strong>
+                                    <small>With Docker access</small>
+                                </span>
+                            </label>
+                            <label class="mode-option">
+                                <input type="radio" name="mode" value="whitebox">
+                                <span>
+                                    <i class="fas fa-code"></i>
+                                    <strong>White Box</strong>
+                                    <small>Source code analysis</small>
+                                </span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <!-- Auto Discovery Mode -->
+                    <div class="form-section">
+                        <h3><i class="fas fa-magic"></i> Automation</h3>
+                        <div class="form-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="autoDiscovery" name="auto_discovery">
+                                <strong>Enable Auto Discovery Mode</strong>
+                            </label>
+                            <div class="help-text">
+                                <i class="fas fa-robot"></i> 
+                                <strong>Recommended!</strong> Automatically crawl website, discover endpoints, detect parameters, 
+                                perform behavioral analysis, and confirm SSRF with callback verification. 
+                                This is the easiest way - just enter URL and go!
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Manual Testing Options (disabled when auto discovery enabled) -->
+                    <div class="form-section" id="manualOptions">
+                        <h3><i class="fas fa-sliders-h"></i> Manual Testing Options</h3>
+                        <div class="checkbox-grid">
+                            <label>
+                                <input type="checkbox" name="test_callback" value="on">
+                                Test for External Callback
+                            </label>
+                            <label>
+                                <input type="checkbox" name="test_internal_scan" value="on">
+                                Test for Internal Network Scan
+                            </label>
+                            <label>
+                                <input type="checkbox" name="test_parameter_fuzzing" value="on">
+                                Parameter Fuzzing
+                            </label>
+                            <label>
+                                <input type="checkbox" name="test_endpoint_discovery" value="on">
+                                Endpoint Discovery
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <!-- Advanced Settings -->
+                    <div class="form-section">
+                        <h3><i class="fas fa-wrench"></i> Advanced Settings</h3>
+                        <div class="form-group">
+                            <label for="timeout">Request Timeout (seconds)</label>
+                            <input type="number" id="timeout" name="timeout" value="10" min="1" max="60">
+                        </div>
+                        <div class="form-group">
+                            <label for="threads">Concurrent Threads</label>
+                            <input type="number" id="threads" name="threads" value="5" min="1" max="20">
+                        </div>
+                    </div>
+                    
+                    <!-- File Upload -->
+                    <div class="form-section">
+                        <h3><i class="fas fa-upload"></i> Import Data (Optional)</h3>
+                        <div class="form-group">
+                            <label for="harFile">Upload HAR or Burp Suite File</label>
+                            <input type="file" id="harFile" name="har_file" accept=".har,.json,.xml">
+                            <div class="help-text">
+                                <i class="fas fa-info-circle"></i> 
+                                Upload a HAR file or Burp Suite XML for more accurate parameter detection.
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Start Button -->
+                    <button type="submit" class="btn-start" id="startBtn">
+                        <i class="fas fa-play"></i> Start Security Scan
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script>
+        // Initialize socket
+        const socket = io();
+        
+        // DOM Elements
+        const scanForm = document.getElementById('scanForm');
+        const startBtn = document.getElementById('startBtn');
+        const notifications = document.getElementById('notifications');
+        const autoDiscovery = document.getElementById('autoDiscovery');
+        const manualOptions = document.querySelectorAll('#manualOptions input[type="checkbox"]');
+        
+        // Auto Discovery Toggle
+        autoDiscovery.addEventListener('change', function() {
+            const isEnabled = this.checked;
+            manualOptions.forEach(option => {
+                option.disabled = isEnabled;
+                option.parentElement.style.opacity = isEnabled ? '0.5' : '1';
+            });
+        });
+        
+        // Add notification
+        function addNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            
+            let icon = 'fa-info-circle';
+            if (type === 'error') icon = 'fa-exclamation-circle';
+            if (type === 'success') icon = 'fa-check-circle';
+            if (type === 'loading') icon = 'fa-spinner fa-spin';
+            
+            notification.innerHTML = `
+                <i class="fas ${icon}"></i>
+                <span>${message}</span>
+            `;
+            
+            notifications.innerHTML = '';
+            notifications.appendChild(notification);
+            
+            // Auto-remove success messages after 3 seconds
+            if (type === 'success') {
+                setTimeout(() => {
+                    notification.remove();
+                }, 3000);
+            }
+        }
+        
+        // Form submission
+        scanForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            // Get form data
+            const formData = new FormData(scanForm);
+            const data = {
+                target_url: formData.get('target_url'),
+                mode: formData.get('mode'),
+                auto_discovery: formData.get('auto_discovery') === 'on',
+                timeout: parseInt(formData.get('timeout')),
+                threads: parseInt(formData.get('threads')),
+                test_callback: formData.get('test_callback') === 'on',
+                test_internal_scan: formData.get('test_internal_scan') === 'on',
+                test_parameter_fuzzing: formData.get('test_parameter_fuzzing') === 'on',
+                test_endpoint_discovery: formData.get('test_endpoint_discovery') === 'on'
+            };
+            
+            // Validate URL
+            if (!data.target_url || !data.target_url.startsWith('http')) {
+                addNotification('⚠️ Please enter a valid URL starting with http:// or https://', 'error');
+                return;
+            }
+            
+            // Show loading
+            startBtn.disabled = true;
+            addNotification('🔍 Validating target URL and checking connectivity...', 'loading');
+            
+            try {
+                // Prepare FormData for multipart/form-data (to support file upload)
+                const formData = new FormData(scanForm);
+                
+                // Start scan
+                const response = await fetch('/api/scan/start', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                // Check if response is JSON
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    throw new Error('Server returned non-JSON response. Please check server logs.');
+                }
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    addNotification('✅ Scan started successfully! Redirecting to results page...', 'success');
+                    
+                    // Redirect to results page after 1 second
+                    setTimeout(() => {
+                        window.location.href = '/results';
+                    }, 1000);
+                } else {
+                    // Show error
+                    addNotification(`❌ ${result.error || 'Failed to start scan'}`, 'error');
+                    
+                    // Add helpful troubleshooting tips
+                    if (result.error && result.error.includes('Connection')) {
+                        const helpDiv = document.createElement('div');
+                        helpDiv.className = 'help-text';
+                        helpDiv.style.marginTop = '10px';
+                        helpDiv.innerHTML = `
+                            <strong>Troubleshooting Tips:</strong><br>
+                            • Check if the URL is correct and accessible<br>
+                            • Verify the target server is running<br>
+                            • Check your internet connection<br>
+                            • Make sure there's no firewall blocking the connection
+                        `;
+                        notifications.appendChild(helpDiv);
+                    }
+                    
+                    startBtn.disabled = false;
+                }
+            } catch (error) {
+                addNotification(`❌ Error: ${error.message}`, 'error');
+                startBtn.disabled = false;
+            }
+        });
+        
+        // Socket connection
+        socket.on('connect', function() {
+            console.log('Connected to server');
+        });
+        
+        socket.on('disconnect', function() {
+            console.log('Disconnected from server');
+        });
+    </script>
+</body>
+</html>

@@ -468,8 +468,4 @@ Contributions welcome! Please:
 
 ---
 
-**⚠️ DISCLAIMER**: Tool này chỉ dùng cho mục đích giáo dục và pentest có phép. Không sử dụng cho mục đích bất hợp pháp!
-
----
-
 **🎯 Happy Hacking!** 🚀

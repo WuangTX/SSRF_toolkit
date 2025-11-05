@@ -6,20 +6,103 @@ Tự động khám phá các endpoints của hệ thống
 import requests
 import asyncio
 import aiohttp
-from urllib.parse import urljoin, urlparse
-from typing import List, Set, Dict
+import time
+import random
+from urllib.parse import urljoin, urlparse, parse_qs
+from typing import List, Set, Dict, Optional, Tuple
 from concurrent.futures import ThreadPoolExecutor
 import re
+import json
+import xml.etree.ElementTree as ET
+from bs4 import BeautifulSoup
+import logging
 
 class EndpointDiscovery:
-    """Khám phá endpoints tự động"""
+    """Khám phá endpoints tự động với async/await và rate limiting"""
     
-    def __init__(self, target_url: str, timeout: int = 10, threads: int = 5):
+    def __init__(self, target_url: str, timeout: int = 10, threads: int = 5, 
+                 rate_limit: float = 2.0, verify_ssl: bool = False, proxies: Optional[Dict] = None):
         self.target_url = target_url.rstrip('/')
         self.timeout = timeout
         self.threads = threads
+        self.rate_limit = rate_limit  # requests per second
+        self.verify_ssl = verify_ssl
+        self.proxies = proxies or {}
+        
         self.discovered_endpoints = set()
+        self.normalized_urls = set()  # For deduplication
+        self.redirects = {}  # original -> final
+        
+        # Session setup with retries
         self.session = requests.Session()
+        self.session.verify = verify_ssl
+        if proxies:
+            self.session.proxies.update(proxies)
+        
+        # Rate limiting
+        self.last_request_time = 0
+        self.request_delay = 1.0 / rate_limit if rate_limit > 0 else 0
+        
+        # Logging
+        self.logger = logging.getLogger(__name__)
+    
+    def _normalize_url(self, url: str) -> str:
+        """Normalize URL for deduplication"""
+        parsed = urlparse(url)
+        # Remove fragment, sort query params
+        query_params = parse_qs(parsed.query)
+        sorted_query = '&'.join(f"{k}={v[0]}" for k, v in sorted(query_params.items()))
+        
+        normalized = f"{parsed.scheme.lower()}://{parsed.netloc.lower()}{parsed.path}"
+        if sorted_query:
+            normalized += f"?{sorted_query}"
+        
+        return normalized
+    
+    def _is_full_url(self, url: str) -> bool:
+        """Check if URL is full URL or relative path"""
+        return url.startswith(('http://', 'https://'))
+    
+    def _rate_limit_delay(self):
+        """Apply rate limiting"""
+        if self.request_delay > 0:
+            current_time = time.time()
+            time_since_last = current_time - self.last_request_time
+            if time_since_last < self.request_delay:
+                sleep_time = self.request_delay - time_since_last
+                time.sleep(sleep_time + random.uniform(0, 0.1))  # Add jitter
+            self.last_request_time = time.time()
+    
+    def _make_request_with_retry(self, url: str, method: str = 'GET', 
+                                max_retries: int = 3, backoff_factor: float = 0.5) -> Optional[requests.Response]:
+        """Make HTTP request with retry and backoff"""
+        for attempt in range(max_retries + 1):
+            try:
+                self._rate_limit_delay()
+                
+                response = self.session.request(
+                    method=method,
+                    url=url,
+                    timeout=self.timeout,
+                    allow_redirects=True,
+                    headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+                )
+                
+                # Track redirects
+                if response.history:
+                    self.redirects[url] = response.url
+                
+                return response
+                
+            except (requests.RequestException, Exception) as e:
+                if attempt < max_retries:
+                    wait_time = backoff_factor * (2 ** attempt) + random.uniform(0, 1)
+                    self.logger.warning(f"Request failed (attempt {attempt + 1}): {e}. Retrying in {wait_time:.2f}s")
+                    time.sleep(wait_time)
+                else:
+                    self.logger.error(f"Request failed after {max_retries + 1} attempts: {e}")
+                    
+        return None
     
     def discover_from_wordlist(self, wordlist_path: str) -> List[Dict]:
         """Brute-force endpoints từ wordlist"""
@@ -123,20 +206,51 @@ class EndpointDiscovery:
             for result in wordlist_results:
                 all_endpoints[result['url']] = result
         
-        # Method 4.5: Brute-force discovered backend services (CRITICAL for microservices!)
+        # Method 4.5: Brute-force discovered backend services với user consent
         if backend_services and wordlist_path:
-            print(f"[*] Brute-forcing {len(backend_services)} backend service(s)...")
-            for backend_url in backend_services:
-                print(f"  [*] Scanning backend: {backend_url}")
-                # Create temporary discovery instance for this backend
-                try:
-                    backend_discovery = EndpointDiscovery(backend_url, self.timeout, self.threads)
-                    backend_results = backend_discovery.discover_from_wordlist(wordlist_path)
-                    for result in backend_results[:15]:  # Limit per service to avoid overwhelming
-                        all_endpoints[result['url']] = result
-                    print(f"  [+] Found {len(backend_results)} endpoints on {backend_url}")
-                except Exception as e:
-                    print(f"  [!] Failed to scan {backend_url}: {str(e)}")
+            print(f"\n[!] DETECTED {len(backend_services)} INTERNAL BACKEND SERVICE(S):")
+            for service in backend_services:
+                print(f"    • {service}")
+            
+            print(f"\n[WARNING] Scanning internal services may:")
+            print(f"  - Generate significant traffic on internal networks")
+            print(f"  - Trigger security alerts")
+            print(f"  - Access sensitive internal systems")
+            
+            # In production, you might want to add user confirmation
+            # For automated testing, we'll proceed with limited scanning
+            scan_backends = True  # Set to False to disable, or implement user input
+            max_paths_per_service = 10  # Reduced from 15
+            
+            if scan_backends:
+                print(f"\n[*] Proceeding with LIMITED backend scanning ({max_paths_per_service} paths per service)...")
+                for backend_url in list(backend_services)[:3]:  # Limit to 3 services max
+                    print(f"  [*] Scanning backend: {backend_url}")
+                    try:
+                        # Create temporary discovery instance with more conservative settings
+                        backend_discovery = EndpointDiscovery(
+                            backend_url, 
+                            timeout=self.timeout,
+                            threads=min(2, self.threads),  # Use fewer threads for backends
+                            rate_limit=self.rate_limit * 0.5,  # Slower rate limiting
+                            verify_ssl=self.verify_ssl,
+                            proxies=self.proxies
+                        )
+                        
+                        backend_results = backend_discovery.discover_from_wordlist(wordlist_path)
+                        
+                        # Further limit results per backend
+                        limited_results = backend_results[:max_paths_per_service]
+                        for result in limited_results:
+                            all_endpoints[result['url']] = result
+                            
+                        print(f"  [+] Found {len(limited_results)}/{len(backend_results)} endpoints on {backend_url}")
+                        
+                    except Exception as e:
+                        print(f"  [!] Failed to scan {backend_url}: {str(e)}")
+            else:
+                print(f"[*] Backend scanning disabled - only main target will be tested")
+                print(f"[*] Backend services logged for manual inspection")
         
         # Method 5: Spider (lightweight crawl)
         print("[*] Spidering for links...")
@@ -151,35 +265,171 @@ class EndpointDiscovery:
             print(f"[!] Spidering failed: {str(e)}")
         
         results = list(all_endpoints.values())
-        print(f"[+] Total unique endpoints discovered: {len(results)}")
+        print(f"\n{'='*60}")
+        print(f"[+] DISCOVERY SUMMARY")
+        print(f"{'='*60}")
+        print(f"Total unique endpoints discovered: {len(results)}")
+        
+        # Summary by severity
+        severity_counts = {'high': 0, 'medium': 0, 'low': 0}
+        for result in results:
+            severity = result.get('severity', 'low')
+            severity_counts[severity] += 1
+        
+        print(f"Severity breakdown:")
+        print(f"  🔴 High: {severity_counts['high']} endpoints")
+        print(f"  🟡 Medium: {severity_counts['medium']} endpoints") 
+        print(f"  🟢 Low: {severity_counts['low']} endpoints")
+        
         if backend_services:
-            print(f"[+] Backend microservices found: {', '.join(backend_services)}")
-            print(f"[!] These backend services will be tested for SSRF vulnerabilities")
+            print(f"\nBackend microservices found: {len(backend_services)}")
+            for service in backend_services:
+                print(f"  • {service}")
+            print(f"[!] These backend services are potential SSRF targets")
+        
+        # Generate detailed report
+        self._generate_detailed_report(results, backend_services)
         
         return results
     
-    def _test_path(self, path: str) -> Dict:
-        """Test một path cụ thể"""
-        url = urljoin(self.target_url, path)
-        
+    def _generate_detailed_report(self, results: List[Dict], backend_services: Set[str]):
+        """Generate detailed discovery report"""
         try:
-            response = self.session.get(url, timeout=self.timeout, allow_redirects=True)
+            import csv
+            import os
+            from datetime import datetime
             
-            # Chỉ log những endpoint thú vị
-            if response.status_code in [200, 201, 301, 302, 401, 403]:
-                self.discovered_endpoints.add(url)
-                
-                return {
-                    'url': url,
-                    'status_code': response.status_code,
-                    'content_length': len(response.content),
-                    'content_type': response.headers.get('Content-Type', ''),
-                    'redirect': response.url if response.url != url else None
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            report_dir = os.path.join(os.getcwd(), 'reports')
+            os.makedirs(report_dir, exist_ok=True)
+            
+            # CSV Report
+            csv_file = os.path.join(report_dir, f'endpoint_discovery_{timestamp}.csv')
+            with open(csv_file, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.DictWriter(f, fieldnames=[
+                    'url', 'status_code', 'severity', 'content_type', 'title',
+                    'content_length', 'response_time', 'server', 'redirect'
+                ])
+                writer.writeheader()
+                for result in results:
+                    writer.writerow({
+                        'url': result.get('url'),
+                        'status_code': result.get('status_code'),
+                        'severity': result.get('severity'),
+                        'content_type': result.get('content_type'),
+                        'title': result.get('title'),
+                        'content_length': result.get('content_length'),
+                        'response_time': result.get('response_time'),
+                        'server': result.get('server'),
+                        'redirect': result.get('redirect')
+                    })
+            
+            # JSON Report
+            json_file = os.path.join(report_dir, f'endpoint_discovery_{timestamp}.json')
+            with open(json_file, 'w', encoding='utf-8') as f:
+                report_data = {
+                    'timestamp': timestamp,
+                    'target': self.target_url,
+                    'discovery_summary': {
+                        'total_endpoints': len(results),
+                        'backend_services': list(backend_services),
+                        'severity_breakdown': {
+                            'high': len([r for r in results if r.get('severity') == 'high']),
+                            'medium': len([r for r in results if r.get('severity') == 'medium']),
+                            'low': len([r for r in results if r.get('severity') == 'low'])
+                        }
+                    },
+                    'endpoints': results,
+                    'redirects': self.redirects
                 }
-        except requests.exceptions.RequestException:
-            pass
+                json.dump(report_data, f, indent=2, ensure_ascii=False)
+            
+            print(f"\n[+] Reports generated:")
+            print(f"  📊 CSV: {csv_file}")
+            print(f"  📋 JSON: {json_file}")
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to generate report: {e}")
+    
+    def _test_path(self, path: str) -> Optional[Dict]:
+        """Test một path cụ thể với improved URL handling"""
+        # Handle full URLs vs relative paths
+        if self._is_full_url(path):
+            url = path
+        else:
+            url = urljoin(self.target_url, path)
+        
+        # Check if already tested (normalized)
+        normalized = self._normalize_url(url)
+        if normalized in self.normalized_urls:
+            return None
+        self.normalized_urls.add(normalized)
+        
+        response = self._make_request_with_retry(url)
+        if not response:
+            return None
+        
+        # Chỉ log những endpoint thú vị
+        if response.status_code in [200, 201, 301, 302, 401, 403, 500]:
+            self.discovered_endpoints.add(url)
+            
+            # Extract title for better context
+            title = ""
+            if 'text/html' in response.headers.get('Content-Type', ''):
+                try:
+                    soup = BeautifulSoup(response.text, 'html.parser')
+                    title_tag = soup.find('title')
+                    if title_tag:
+                        title = title_tag.get_text().strip()[:100]
+                except:
+                    pass
+            
+            # Check for interesting content
+            severity = self._assess_endpoint_severity(url, response)
+            
+            return {
+                'url': url,
+                'normalized_url': normalized,
+                'status_code': response.status_code,
+                'content_length': len(response.content),
+                'content_type': response.headers.get('Content-Type', ''),
+                'title': title,
+                'redirect': response.url if response.url != url else None,
+                'response_time': response.elapsed.total_seconds(),
+                'severity': severity,
+                'headers': dict(response.headers),
+                'server': response.headers.get('Server', '')
+            }
         
         return None
+    
+    def _assess_endpoint_severity(self, url: str, response: requests.Response) -> str:
+        """Assess endpoint severity/interest level"""
+        content = response.text.lower()
+        
+        # High severity indicators
+        high_indicators = [
+            '.env', 'api_key', 'secret', 'password', 'token',
+            'database', 'config', 'admin', 'debug', 'test',
+            '.git', 'swagger', 'openapi', '/actuator'
+        ]
+        
+        # Medium severity
+        medium_indicators = [
+            'api/', 'graphql', 'websocket', 'metrics',
+            'health', 'status', 'version'
+        ]
+        
+        url_lower = url.lower()
+        
+        if any(indicator in url_lower or indicator in content for indicator in high_indicators):
+            return 'high'
+        elif any(indicator in url_lower for indicator in medium_indicators):
+            return 'medium'
+        elif response.status_code in [401, 403]:
+            return 'medium'
+        else:
+            return 'low'
     
     def discover_from_robots_txt(self) -> List[str]:
         """Khám phá từ robots.txt"""
@@ -201,101 +451,192 @@ class EndpointDiscovery:
         return paths
     
     def discover_from_sitemap(self) -> List[str]:
-        """Khám phá từ sitemap.xml"""
+        """Khám phá từ sitemap.xml với proper XML parsing"""
         paths = []
         sitemap_urls = [
             '/sitemap.xml',
-            '/sitemap_index.xml',
-            '/sitemap-index.xml'
+            '/sitemap_index.xml', 
+            '/sitemap-index.xml',
+            '/sitemaps.xml'
         ]
         
         for sitemap_path in sitemap_urls:
             try:
                 sitemap_url = urljoin(self.target_url, sitemap_path)
-                response = self.session.get(sitemap_url, timeout=self.timeout)
+                response = self._make_request_with_retry(sitemap_url)
                 
-                if response.status_code == 200:
-                    # Extract URLs from XML
-                    urls = re.findall(r'<loc>(.*?)</loc>', response.text)
-                    for url in urls:
-                        parsed = urlparse(url)
-                        if parsed.path:
-                            paths.append(parsed.path)
-            except:
+                if response and response.status_code == 200:
+                    try:
+                        # Parse XML properly
+                        root = ET.fromstring(response.content)
+                        
+                        # Handle different XML namespaces
+                        namespaces = {
+                            'sitemap': 'http://www.sitemaps.org/schemas/sitemap/0.9'
+                        }
+                        
+                        # Extract URLs from <loc> tags
+                        for url_elem in root.findall('.//sitemap:url/sitemap:loc', namespaces):
+                            url = url_elem.text
+                            if url:
+                                parsed = urlparse(url)
+                                if parsed.path and parsed.path != '/':
+                                    paths.append(parsed.path)
+                        
+                        # Also handle sitemap index files
+                        for sitemap_elem in root.findall('.//sitemap:sitemap/sitemap:loc', namespaces):
+                            sitemap_url = sitemap_elem.text
+                            if sitemap_url:
+                                # Recursively parse nested sitemaps (limit depth)
+                                try:
+                                    nested_response = self._make_request_with_retry(sitemap_url)
+                                    if nested_response and nested_response.status_code == 200:
+                                        nested_root = ET.fromstring(nested_response.content)
+                                        for url_elem in nested_root.findall('.//sitemap:url/sitemap:loc', namespaces):
+                                            url = url_elem.text
+                                            if url:
+                                                parsed = urlparse(url)
+                                                if parsed.path and parsed.path != '/':
+                                                    paths.append(parsed.path)
+                                except:
+                                    continue
+                                    
+                    except ET.ParseError:
+                        # Fallback to regex if XML parsing fails
+                        urls = re.findall(r'<loc>(.*?)</loc>', response.text)
+                        for url in urls:
+                            parsed = urlparse(url)
+                            if parsed.path and parsed.path != '/':
+                                paths.append(parsed.path)
+                                
+            except Exception as e:
+                self.logger.debug(f"Failed to parse sitemap {sitemap_path}: {e}")
                 continue
         
-        return paths
+        return list(set(paths))  # Remove duplicates
     
     def discover_from_javascript(self) -> Set[str]:
-        """Extract API endpoints from JavaScript files"""
+        """Extract API endpoints from JavaScript files với improved parsing"""
         api_endpoints = set()
         
         try:
             # Get main page HTML
-            response = self.session.get(self.target_url, timeout=self.timeout)
-            if response.status_code != 200:
+            response = self._make_request_with_retry(self.target_url)
+            if not response or response.status_code != 200:
                 return api_endpoints
+
+            # Parse HTML with BeautifulSoup for better script extraction
+            soup = BeautifulSoup(response.text, 'html.parser')
             
             # Find all script tags
-            script_urls = re.findall(r'<script[^>]+src=["\']([^"\']+)["\']', response.text)
+            script_tags = soup.find_all('script')
+            external_scripts = []
+            inline_scripts = []
             
-            # Also check inline scripts
-            inline_scripts = re.findall(r'<script[^>]*>(.*?)</script>', response.text, re.DOTALL)
+            for script in script_tags:
+                if script.get('src'):
+                    external_scripts.append(script.get('src'))
+                elif script.string:
+                    inline_scripts.append(script.string)
             
             all_js_content = '\n'.join(inline_scripts)
             
-            # Fetch external scripts (limit to avoid too many requests)
-            for script_url in script_urls[:5]:
+            # Fetch external scripts (increased limit with rate limiting)
+            for script_url in external_scripts[:10]:  # Increased from 5 to 10
                 try:
-                    full_url = urljoin(self.target_url, script_url)
-                    js_response = self.session.get(full_url, timeout=self.timeout)
-                    if js_response.status_code == 200:
+                    if self._is_full_url(script_url):
+                        full_url = script_url
+                    else:
+                        full_url = urljoin(self.target_url, script_url)
+                    
+                    js_response = self._make_request_with_retry(full_url)
+                    if js_response and js_response.status_code == 200:
                         all_js_content += '\n' + js_response.text
-                except:
+                except Exception as e:
+                    self.logger.debug(f"Failed to fetch script {script_url}: {e}")
                     continue
-            
-            # Extract API endpoints using patterns
-            # Pattern 1: fetch('...'), fetch("...")
-            fetch_urls = re.findall(r'fetch\s*\(\s*[\'"`]([^\'"`]+)[\'"`]', all_js_content)
-            api_endpoints.update(fetch_urls)
-            
-            # Pattern 2: axios.get/post('...'), axios.get/post("...")
-            axios_urls = re.findall(r'axios\.[a-z]+\s*\(\s*[\'"`]([^\'"`]+)[\'"`]', all_js_content)
-            api_endpoints.update(axios_urls)
-            
-            # Pattern 3: http.get/post('...'), http.get/post("...")  
-            http_urls = re.findall(r'http\.[a-z]+\s*\(\s*[\'"`]([^\'"`]+)[\'"`]', all_js_content)
-            api_endpoints.update(http_urls)
-            
-            # Pattern 4: Direct URL patterns (http://..., https://...)
-            url_patterns = re.findall(r'[\'"`](https?://[^\'"`\s]+)[\'"`]', all_js_content)
-            
-            # Filter to only internal/localhost URLs (not external sites like reactjs.org, w3.org)
-            for url in url_patterns:
-                parsed = urlparse(url)
-                hostname = parsed.netloc.lower()
+
+            # Enhanced API endpoint extraction patterns
+            patterns = [
+                # Fetch/axios patterns
+                r'fetch\s*\(\s*[\'"`]([^\'"`]+)[\'"`]',
+                r'axios\.[a-z]+\s*\(\s*[\'"`]([^\'"`]+)[\'"`]',
+                r'\$\.(?:get|post|put|delete)\s*\(\s*[\'"`]([^\'"`]+)[\'"`]',
                 
-                # Only include localhost, internal IPs, or service names (no www., no public domains)
-                if (hostname.startswith('localhost') or 
-                    hostname.startswith('127.') or 
-                    hostname.startswith('192.168.') or 
-                    hostname.startswith('10.') or 
-                    hostname.startswith('172.') or
-                    hostname.endswith('-service') or  # microservice naming pattern
-                    hostname.endswith('.local') or
-                    ':' in hostname and not '.' in hostname.split(':')[0]):  # service-name:port
-                    api_endpoints.add(url)
+                # Direct API paths  
+                r'[\'"`](/api/[^\'"`\s]+)[\'"`]',
+                r'[\'"`](/v\d+/[^\'"`\s]+)[\'"`]',
+                r'[\'"`](/graphql[^\'"`\s]*)[\'"`]',
+                
+                # URL assignment patterns
+                r'url\s*[:=]\s*[\'"`]([^\'"`]+)[\'"`]',
+                r'endpoint\s*[:=]\s*[\'"`]([^\'"`]+)[\'"`]',
+                r'baseURL\s*[:=]\s*[\'"`]([^\'"`]+)[\'"`]',
+                
+                # Service URLs with ports
+                r'[\'"`](https?://[^\'"`\s]+:\d+[^\'"`\s]*)[\'"`]',
+                
+                # Internal service patterns  
+                r'[\'"`](https?://[a-zA-Z0-9-]+(?:-service)?(?:\.local)?(?::\d+)?[^\'"`\s]*)[\'"`]'
+            ]
             
-            # Pattern 5: Relative API paths (/api/..., /v1/...)
-            relative_apis = re.findall(r'[\'"`](/(?:api|v\d+)/[^\'"`\s]+)[\'"`]', all_js_content)
-            api_endpoints.update(relative_apis)
+            for pattern in patterns:
+                matches = re.findall(pattern, all_js_content, re.IGNORECASE)
+                api_endpoints.update(matches)
             
-            print(f"[*] Found {len(api_endpoints)} potential API endpoints in JavaScript")
+            # Parse JSON objects in inline scripts
+            json_objects = re.findall(r'\{[^{}]*[\'"`]url[\'"`]\s*:\s*[\'"`]([^\'"`]+)[\'"`][^{}]*\}', 
+                                    all_js_content, re.IGNORECASE)
+            api_endpoints.update(json_objects)
+            
+            # Filter and validate endpoints
+            filtered_endpoints = set()
+            for endpoint in api_endpoints:
+                if self._is_valid_endpoint(endpoint):
+                    filtered_endpoints.add(endpoint)
             
         except Exception as e:
-            print(f"[!] JavaScript parsing failed: {str(e)}")
+            self.logger.error(f"JavaScript parsing failed: {e}")
+            
+        return filtered_endpoints
+    
+    def _is_valid_endpoint(self, endpoint: str) -> bool:
+        """Validate if endpoint is worth testing"""
+        endpoint_lower = endpoint.lower()
         
-        return api_endpoints
+        # Skip common external domains/CDNs
+        skip_domains = [
+            'google.com', 'googleapis.com', 'gstatic.com',
+            'facebook.com', 'twitter.com', 'linkedin.com',
+            'jsdelivr.net', 'unpkg.com', 'cdnjs.cloudflare.com',
+            'bootstrap.com', 'jquery.com', 'reactjs.org'
+        ]
+        
+        for domain in skip_domains:
+            if domain in endpoint_lower:
+                return False
+        
+        # Skip non-API file extensions
+        skip_extensions = ['.js', '.css', '.png', '.jpg', '.gif', '.svg', '.ico', '.woff', '.ttf']
+        for ext in skip_extensions:
+            if endpoint_lower.endswith(ext):
+                return False
+        
+        # Must be either relative path or internal service
+        if endpoint.startswith('/'):
+            return True
+        
+        if self._is_full_url(endpoint):
+            parsed = urlparse(endpoint)
+            hostname = parsed.netloc.lower()
+            
+            # Allow localhost, internal IPs, and service names
+            return (hostname.startswith(('localhost', '127.', '192.168.', '10.', '172.')) or
+                   '-service' in hostname or 
+                   '.local' in hostname or
+                   ':' in hostname and not '.' in hostname.split(':')[0])
+        
+        return True
     
     def spider_endpoints(self, max_depth: int = 2) -> Set[str]:
         """Spider để tìm thêm endpoints từ links"""
@@ -338,42 +679,99 @@ class EndpointDiscovery:
         return found_endpoints
     
     def _get_default_wordlist(self) -> List[str]:
-        """Default wordlist cho microservices"""
+        """Enhanced default wordlist cho microservices & modern web apps"""
         return [
-            # API endpoints
-            '/api', '/api/v1', '/api/v2',
-            '/api/users', '/api/products', '/api/inventory',
-            '/api/orders', '/api/auth', '/api/admin',
+            # Core API endpoints
+            '/api', '/api/v1', '/api/v2', '/api/v3',
+            '/v1', '/v2', '/v3', '/v4',
+            '/graphql', '/graphiql',
+            '/rest', '/restapi',
             
-            # Health & Monitoring
-            '/health', '/healthz', '/status',
+            # Authentication & Users
+            '/api/auth', '/api/login', '/api/users', '/api/user',
+            '/auth', '/login', '/signin', '/signup', '/register',
+            '/oauth', '/oauth2', '/sso', '/saml',
+            '/api/profile', '/api/account',
+            
+            # Business Logic APIs
+            '/api/products', '/api/inventory', '/api/orders',
+            '/api/payments', '/api/billing', '/api/cart',
+            '/api/search', '/api/recommendations',
+            '/api/analytics', '/api/notifications',
+            
+            # Admin & Management
+            '/admin', '/admin/login', '/admin/dashboard',
+            '/dashboard', '/console', '/management',
+            '/api/admin', '/api/management',
+            
+            # Health & Monitoring (Critical for SSRF!)
+            '/health', '/healthz', '/status', '/ping',
             '/metrics', '/prometheus', '/actuator',
             '/actuator/health', '/actuator/metrics', '/actuator/env',
+            '/actuator/configprops', '/actuator/dump', '/actuator/trace',
+            '/monitor', '/monitoring', '/diagnostic',
             
-            # Admin panels
-            '/admin', '/admin/login', '/dashboard',
-            '/console', '/management',
-            
-            # Documentation
-            '/docs', '/swagger', '/api-docs',
-            '/swagger-ui', '/swagger-ui.html',
+            # Documentation & Discovery
+            '/docs', '/swagger', '/api-docs', '/swagger-ui',
+            '/swagger-ui.html', '/swagger-ui/index.html',
             '/openapi.json', '/api/swagger.json',
+            '/redoc', '/rapidoc', '/scalar',
+            '/postman', '/insomnia',
             
-            # Common microservice paths
+            # Microservice Common Patterns
             '/user-service', '/product-service', '/inventory-service',
             '/auth-service', '/payment-service', '/order-service',
+            '/notification-service', '/search-service', '/analytics-service',
             
-            # Config & Debug
-            '/config', '/env', '/debug',
-            '/trace', '/dump', '/heapdump',
+            # Internal Services (High SSRF value!)
+            '/internal', '/internal/api', '/internal/health',
+            '/service', '/services', '/microservice', '/microservices',
             
-            # Static files
-            '/static', '/assets', '/public',
-            '/js', '/css', '/images',
+            # Configuration & Environment (High severity!)
+            '/config', '/configuration', '/env', '/environment',
+            '/settings', '/properties', '/flags', '/feature-flags',
+            '/.env', '/.env.local', '/.env.production',
+            '/config.json', '/config.yml', '/config.yaml',
             
-            # Files
-            '/robots.txt', '/sitemap.xml',
-            '/.git', '/.env', '/config.yml'
+            # Debug & Development (High severity!)
+            '/debug', '/trace', '/dump', '/heapdump',
+            '/profiler', '/profile', '/debug/vars',
+            '/test', '/testing', '/dev', '/development',
+            
+            # File Discovery
+            '/robots.txt', '/sitemap.xml', '/security.txt',
+            '/.well-known', '/.well-known/security.txt',
+            '/humans.txt', '/crossdomain.xml',
+            
+            # Version Control & Backups (Critical!)
+            '/.git', '/.git/config', '/.git/HEAD',
+            '/.svn', '/.hg', '/.bzr',
+            '/backup', '/backups', '/.backup',
+            
+            # Static Assets & Build
+            '/static', '/assets', '/public', '/dist',
+            '/js', '/css', '/images', '/img',
+            '/fonts', '/media', '/uploads',
+            '/build', '/webpack', '/bundle',
+            
+            # Database & Cache Interfaces
+            '/db', '/database', '/mysql', '/postgres',
+            '/redis', '/memcached', '/mongo',
+            '/elasticsearch', '/kibana', '/grafana',
+            
+            # Container & Orchestration
+            '/docker', '/kubernetes', '/k8s',
+            '/helm', '/compose',
+            '/health-check', '/readiness', '/liveness',
+            
+            # Common Frameworks
+            '/spring', '/django', '/flask', '/express',
+            '/rails', '/laravel', '/symfony',
+            '/nextjs', '/nuxt', '/gatsby',
+            
+            # Error Pages (Sometimes expose info)
+            '/404', '/500', '/error', '/errors',
+            '/exception', '/stacktrace'
         ]
     
     def get_summary(self) -> Dict:

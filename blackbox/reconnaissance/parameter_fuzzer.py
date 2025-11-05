@@ -51,24 +51,68 @@ class ParameterFuzzer:
         'http://172.17.0.1',       # Docker gateway
     ]
     
-    def __init__(self, timeout: int = 10, threads: int = 5):
+    # Payload mapping for custom selection
+    PAYLOAD_MAP = {
+        'aws': [
+            'http://169.254.169.254',
+            'http://169.254.169.254/latest/meta-data/'
+        ],
+        'gcp': [
+            'http://metadata.google.internal',
+            'http://metadata.google.internal/computeMetadata/v1/'
+        ],
+        'localhost': [
+            'http://127.0.0.1',
+            'http://localhost',
+            'http://0.0.0.0',
+            'http://[::1]'
+        ],
+        'docker': [
+            'http://host.docker.internal',
+            'http://172.17.0.1'
+        ],
+        'file': [
+            'file:///etc/passwd'
+        ]
+    }
+    
+    def __init__(self, timeout: int = 10, threads: int = 5, custom_params: List[str] = None, custom_payloads: List[str] = None):
         self.timeout = timeout
         self.threads = threads
         self.session = requests.Session()
         self.vulnerable_params = []
+        
+        # Use custom parameters if provided
+        if custom_params:
+            self.SSRF_PARAMETERS = custom_params
+            print(f"[*] Using {len(custom_params)} custom parameters")
+        
+        # Use custom payloads if provided
+        if custom_payloads:
+            self.TEST_PAYLOADS = []
+            for payload in custom_payloads:
+                # Check if it's a category name (aws, gcp, etc.) or a raw URL
+                if payload in self.PAYLOAD_MAP:
+                    # It's a category - add all payloads from that category
+                    self.TEST_PAYLOADS.extend(self.PAYLOAD_MAP[payload])
+                else:
+                    # It's a raw URL - add it directly
+                    self.TEST_PAYLOADS.append(payload)
+            print(f"[*] Using {len(self.TEST_PAYLOADS)} custom payloads")
     
     def fuzz_endpoint(self, url: str, method: str = 'GET') -> List[Dict]:
         """Fuzz một endpoint cụ thể"""
         results = []
         
-        print(f"[*] Fuzzing {url} with {len(self.SSRF_PARAMETERS)} parameters...")
+        print(f"[*] Fuzzing {url} with {len(self.SSRF_PARAMETERS)} parameters x {len(self.TEST_PAYLOADS)} payloads = {len(self.SSRF_PARAMETERS) * len(self.TEST_PAYLOADS)} tests")
         
         # Test từng parameter
-        for param in self.SSRF_PARAMETERS:
+        for idx, param in enumerate(self.SSRF_PARAMETERS, 1):
+            print(f"[{idx}/{len(self.SSRF_PARAMETERS)}] Testing parameter: {param}")
             result = self._test_parameter(url, param, method)
             if result:
                 results.append(result)
-                print(f"[+] Found parameter: {param}")
+                print(f"[+] Found vulnerable parameter: {param}")
         
         return results
     

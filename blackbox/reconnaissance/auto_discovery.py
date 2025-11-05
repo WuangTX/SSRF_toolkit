@@ -12,6 +12,7 @@ from urllib.parse import urljoin, urlparse, parse_qs, quote, unquote
 from bs4 import BeautifulSoup
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
 
 class AutoDiscovery:
     """
@@ -92,6 +93,12 @@ class AutoDiscovery:
         testable = self._identify_testable_endpoints(results)
         results['testable_endpoints'] = testable
         print(f"      ✓ {len(testable)} endpoints ready for SSRF testing")
+        
+        # Phase 6: SSRF Testing (NEW!)
+        print("\n[6/6] 🔥 Testing for SSRF vulnerabilities...")
+        ssrf_vulnerabilities = self._test_ssrf_vulnerabilities(testable)
+        results['ssrf_vulnerabilities'] = ssrf_vulnerabilities
+        print(f"      ✓ {len(ssrf_vulnerabilities)} SSRF vulnerabilities found!")
         
         return results
     
@@ -200,6 +207,16 @@ class AutoDiscovery:
             '/internal', '/admin/api'
         ]
         
+        # SSRF-prone paths - paths likely to accept URLs
+        ssrf_paths = [
+            '/check_price', '/price_check', '/compare_price',
+            '/fetch', '/proxy', '/callback', '/webhook',
+            '/import', '/export', '/download',
+            '/validate', '/verify', '/check',
+            '/thumbnail', '/preview', '/image',
+            '/api_call', '/external', '/remote'
+        ]
+        
         base_root = f"{self.base_scheme}://{self.base_domain}"
         
         print(f"      Testing {len(common_api_paths)} common API paths...")
@@ -213,10 +230,47 @@ class AutoDiscovery:
                 if response.status_code in [200, 201, 400, 401, 403, 405, 422, 500]:
                     api_endpoints.add(test_url)
                     print(f"      ✓ Found: {path} [{response.status_code}]")
+                    
+                    # For discovered API endpoints, try to find SSRF-prone sub-paths
+                    self._discover_ssrf_endpoints(test_url, ssrf_paths, api_endpoints)
+                    
             except:
                 pass
         
         return api_endpoints
+    
+    def _discover_ssrf_endpoints(self, base_api: str, ssrf_paths: List[str], api_endpoints: Set[str]):
+        """
+        Discover SSRF-prone endpoints like /api/products/1/check_price/
+        """
+        # Try with common ID patterns
+        id_patterns = ['1', '2', '5', '{id}']
+        
+        for id_val in id_patterns:
+            for ssrf_path in ssrf_paths:
+                # Pattern: /api/products/5/check_price/
+                test_endpoint = f"{base_api}/{id_val}{ssrf_path}/"
+                
+                try:
+                    # Test both GET and POST
+                    get_response = self.session.get(test_endpoint, timeout=3, allow_redirects=False)
+                    if get_response.status_code in [200, 400, 401, 403, 405, 422, 500]:
+                        api_endpoints.add(test_endpoint)
+                        print(f"      ✓ SSRF endpoint found: {test_endpoint} [GET:{get_response.status_code}]")
+                    
+                    # Test POST với JSON
+                    post_response = self.session.post(
+                        test_endpoint, 
+                        json={"test": "value"},
+                        timeout=3, 
+                        allow_redirects=False
+                    )
+                    if post_response.status_code in [200, 400, 401, 403, 405, 422, 500]:
+                        api_endpoints.add(test_endpoint)
+                        print(f"      ✓ SSRF endpoint found: {test_endpoint} [POST:{post_response.status_code}]")
+                        
+                except:
+                    pass
     
     def _parse_all_forms(self) -> List[Dict]:
         """Parse tất cả HTML forms"""
@@ -294,16 +348,39 @@ class AutoDiscovery:
                         'reason': f'Parameter name "{param}" suggests URL handling'
                     })
         
-        # Check API endpoints
+        # Check API endpoints (ADD SYNTHETIC PARAMETERS FOR GET)
+        common_ssrf_params = ['url', 'callback', 'webhook', 'redirect', 'target', 'src', 'endpoint']
+        
         for api_endpoint in results['api_endpoints']:
-            testable.append({
-                'type': 'api_endpoint',
-                'endpoint': api_endpoint,
-                'parameter': None,
-                'method': 'GET',
-                'confidence': 0.4,
-                'reason': 'API endpoint - needs parameter fuzzing'
-            })
+            # Test GET với query parameters
+            for param in common_ssrf_params:
+                testable.append({
+                    'type': 'api_endpoint_synthetic',
+                    'endpoint': api_endpoint,
+                    'parameter': param,
+                    'method': 'GET',
+                    'confidence': 0.6,
+                    'reason': f'API endpoint with synthetic parameter "{param}"'
+                })
+            
+            # Test POST với JSON body cho SSRF-prone endpoints
+            endpoint_path = api_endpoint.lower()
+            ssrf_indicators = [
+                'check_price', 'price_check', 'compare_price', 'compare_url',
+                'fetch', 'proxy', 'callback', 'webhook', 'import', 'export',
+                'validate', 'verify', 'check', 'thumbnail', 'preview', 'image'
+            ]
+            
+            if any(indicator in endpoint_path for indicator in ssrf_indicators):
+                for param in ['url', 'compare_url', 'callback_url', 'webhook_url', 'target_url', 'src_url']:
+                    testable.append({
+                        'type': 'api_endpoint_json_post',
+                        'endpoint': api_endpoint,
+                        'parameter': param,
+                        'method': 'POST',
+                        'confidence': 0.8,
+                        'reason': f'SSRF-prone endpoint "{api_endpoint}" with JSON parameter "{param}"'
+                    })
         
         # Check forms
         for form in results['forms']:
@@ -426,6 +503,127 @@ class AutoDiscovery:
             'indicators': indicators,
             'test_results': test_results
         }
+
+    def _test_ssrf_vulnerabilities(self, testable_endpoints: List[Dict]) -> List[Dict]:
+        """
+        🔥 SSRF VULNERABILITY TESTING
+        Test each endpoint với callback server để confirm SSRF 100%
+        """
+        vulnerabilities = []
+        
+        if not testable_endpoints:
+            return vulnerabilities
+        
+        # Start callback server
+        from ..detection.external_callback import CallbackServer
+        
+        try:
+            # Khởi tạo callback server
+            callback_server = CallbackServer(port=9999)  # Avoid conflict với MCP Burp (8888)
+            callback_url = callback_server.start()
+            print(f"      📡 Callback server started: {callback_url}")
+            
+            # Test từng endpoint
+            for i, target in enumerate(testable_endpoints[:10], 1):  # Limit 10 để không spam
+                endpoint = target['endpoint']
+                parameter = target['parameter']
+                confidence = target['confidence']
+                
+                print(f"      🎯 [{i:2d}] Testing {endpoint} (param: {parameter})")
+                
+                # Generate unique callback URL
+                test_id = f"ssrf_{i}_{int(time.time())}"
+                test_callback_url = f"{callback_url}/{test_id}"
+                
+                vulnerability = self._test_single_ssrf(endpoint, parameter, test_callback_url, test_id, callback_server, target.get('method', 'GET'), target.get('type', 'unknown'))
+                
+                if vulnerability:
+                    vulnerability['confidence'] = confidence
+                    vulnerability['original_confidence'] = confidence
+                    vulnerabilities.append(vulnerability)
+                    print(f"         🔥 SSRF CONFIRMED! {endpoint}")
+                else:
+                    print(f"         ❌ No SSRF detected")
+                
+                # Rate limiting
+                time.sleep(0.5)
+            
+            # Stop callback server
+            callback_server.stop()
+            print(f"      📡 Callback server stopped")
+            
+        except Exception as e:
+            print(f"         ❌ Error in SSRF testing: {e}")
+        
+        return vulnerabilities
+
+    def _test_single_ssrf(self, endpoint: str, parameter: str, callback_url: str, test_id: str, callback_server, method: str = 'GET', test_type: str = 'unknown') -> Optional[Dict]:
+        """
+        Test single endpoint for SSRF vulnerability
+        Supports both GET (query params) and POST (JSON body)
+        """
+        try:
+            # Clear any existing callbacks
+            callback_server.clear_callbacks()
+            
+            start_time = time.time()
+            
+            # Choose request method based on test type
+            if method.upper() == 'POST' and 'json' in test_type.lower():
+                # POST with JSON body
+                json_payload = {parameter: callback_url}
+                response = self.session.post(
+                    endpoint, 
+                    json=json_payload, 
+                    timeout=10, 
+                    allow_redirects=True
+                )
+                payload_info = f"POST JSON: {json_payload}"
+            else:
+                # GET with query parameters  
+                if '?' in endpoint:
+                    test_url = f"{endpoint}&{parameter}={callback_url}"
+                else:
+                    test_url = f"{endpoint}?{parameter}={callback_url}"
+                
+                response = self.session.get(test_url, timeout=10, allow_redirects=True)
+                payload_info = f"GET: {test_url}"
+            
+            request_time = time.time()
+            
+            # Wait for callback (up to 5 seconds)
+            max_wait = 5
+            wait_time = 0
+            
+            while wait_time < max_wait:
+                callbacks = callback_server.get_callbacks()
+                for callback in callbacks:
+                    if test_id in callback.get('path', ''):
+                        # SSRF CONFIRMED!
+                        return {
+                            'endpoint': endpoint,
+                            'parameter': parameter,
+                            'method': method,
+                            'payload': payload_info,
+                            'callback_url': callback_url,
+                            'callback_received': callback,
+                            'response_status': response.status_code,
+                            'response_time': request_time - start_time,
+                            'callback_time': callback.get('timestamp'),
+                            'severity': 'HIGH',
+                            'type': 'SSRF',
+                            'confirmed': True
+                        }
+                
+                time.sleep(0.2)
+                wait_time += 0.2
+            
+            # No callback received
+            return None
+            
+        except Exception as e:
+            print(f"         ⚠️  Error testing {endpoint}: {e}")
+            return None
 
 
 # Helper function cho easy usage

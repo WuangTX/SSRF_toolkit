@@ -3,327 +3,228 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Microservice SSRF Pentest Toolkit</title>
+    <title>SSRF Pentest Toolkit</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
-    <!-- Header -->
-    <header>
-        <div class="container">
-            <div class="logo">
-                <i class="fas fa-shield-alt"></i>
-                <h1>SSRF Pentest Toolkit</h1>
-            </div>
-            <nav>
-                <span class="status-badge" id="statusBadge">
-                    <i class="fas fa-circle"></i> Ready
-                </span>
-            </nav>
-        </div>
-    </header>
+    <div class="container">
+        <header>
+            <h1>🛡️ SSRF Pentest Toolkit</h1>
+            <p>Microservice Security Testing Suite</p>
+        </header>
 
-    <!-- Main Content -->
-    <main class="container">
-        <!-- Configuration Panel -->
-        <section class="panel config-panel">
-            <h2><i class="fas fa-cog"></i> Scan Configuration</h2>
-            
-            <form id="scanForm">
-                <div class="form-grid">
-                    <!-- Mode Selection -->
-                    <div class="form-group full-width">
-                        <label>Testing Mode</label>
-                        <div class="mode-selector">
-                            <label class="mode-option">
-                                <input type="radio" name="mode" value="blackbox" checked>
-                                <span>
-                                    <i class="fas fa-box"></i>
-                                    <strong>Black Box</strong>
-                                    <small>External testing only</small>
-                                </span>
-                            </label>
-                            <label class="mode-option">
-                                <input type="radio" name="mode" value="graybox">
-                                <span>
-                                    <i class="fas fa-adjust"></i>
-                                    <strong>Gray Box</strong>
-                                    <small>With Docker access</small>
-                                </span>
-                            </label>
-                            <label class="mode-option">
-                                <input type="radio" name="mode" value="whitebox">
-                                <span>
-                                    <i class="fas fa-code"></i>
-                                    <strong>White Box</strong>
-                                    <small>Source code analysis</small>
-                                </span>
-                            </label>
-                            <label class="mode-option">
-                                <input type="radio" name="mode" value="all">
-                                <span>
-                                    <i class="fas fa-layer-group"></i>
-                                    <strong>Full Scan</strong>
-                                    <small>All modes combined</small>
-                                </span>
-                            </label>
-                        </div>
-                    </div>
-
-                    <!-- Target URL -->
-                    <div class="form-group">
-                        <label for="target">
-                            <i class="fas fa-bullseye"></i> Target URL
-                        </label>
-                        <input type="url" id="target" name="target" 
-                               placeholder="http://localhost:8083/inventory/1/M" 
-                               required>
-                    </div>
-
-                    <!-- Source Path (for whitebox) -->
-                    <div class="form-group">
-                        <label for="sourcePath">
-                            <i class="fas fa-folder"></i> Source Code Path
-                        </label>
-                        <input type="text" id="sourcePath" name="source_path" 
-                               placeholder="./microservice_lab">
-                    </div>
-
-                    <!-- Timeout -->
-                    <div class="form-group">
-                        <label for="timeout">
-                            <i class="fas fa-clock"></i> Timeout (seconds)
-                        </label>
-                        <input type="number" id="timeout" name="timeout" 
-                               value="10" min="1" max="60">
-                    </div>
-                    
-                    <!-- HAR File Upload -->
-                    <div class="form-group full-width">
-                        <label for="harFile">
-                            <i class="fas fa-file-archive"></i> Traffic Capture File (Optional - Already Logged In)
-                        </label>
-                        <div class="file-upload-area">
-                            <input type="file" id="harFile" name="har_file" 
-                                   accept=".har,.json,.xml" style="display: none;">
-                            <button type="button" class="btn-secondary" onclick="document.getElementById('harFile').click()">
-                                <i class="fas fa-upload"></i> Choose File
-                            </button>
-                            <span id="harFileName" class="file-name">No file selected</span>
-                            <button type="button" id="clearHarBtn" class="btn-danger" style="display: none;" onclick="clearHARFile()">
-                                <i class="fas fa-times"></i>
-                            </button>
-                        </div>
-                        <small class="hint">
-                            💡 <strong>Burp Suite:</strong> Proxy → HTTP History → Select All → Right-click → Save → JSON/XML<br>
-                            💡 <strong>Chrome DevTools:</strong> F12 → Network → Right-click → Save as HAR<br>
-                            ⚡ This captures ALL traffic including JWT tokens, cookies, and microservice interactions
-                        </small>
-                    </div>
+        <main>
+            <!-- Configuration Section -->
+            <section class="card" id="configSection">
+                <h2>Configuration</h2>
+                
+                <!-- Config Tabs -->
+                <div class="config-tabs">
+                    <button class="config-tab active" data-config-tab="autoScan">
+                        🤖 Auto Scan
+                    </button>
+                    <button class="config-tab" data-config-tab="burpImport">
+                        📁 Import from Burp Suite
+                    </button>
                 </div>
 
-                <!-- Testing Options -->
-                <div class="options-group">
-                    <h3>Testing Modules</h3>
-                    
-                    <!-- Auto Discovery Mode (Highlighted) -->
-                    <div class="auto-discovery-banner">
-                        <label class="checkbox-option auto-mode">
-                            <input type="checkbox" name="auto_discovery" id="autoDiscovery">
-                            <span>
-                                <i class="fas fa-magic"></i> 
-                                <strong>AUTO DISCOVERY MODE</strong>
-                                <small>🚀 Just input domain - tool does everything automatically</small>
-                            </span>
-                        </label>
-                        <div class="auto-discovery-info">
-                            <p>✨ <strong>Fully Automated Workflow:</strong></p>
-                            <ul>
-                                <li>🔍 Auto-crawl website & discover all endpoints</li>
-                                <li>🎯 Intelligent parameter detection & testing</li>
-                                <li>🧠 Behavioral SSRF analysis (time-based, error-based)</li>
-                                <li>✅ Automatic callback confirmation</li>
-                                <li>📊 Smart confidence scoring</li>
-                            </ul>
-                            <p class="note">💡 When enabled, other modules are automated - no manual config needed!</p>
+                <form id="scanForm">
+                    <!-- Auto Scan Tab Content -->
+                    <div class="config-tab-content active" id="autoScanTab">
+                        <div class="form-group">
+                            <label for="targetUrl">Target URL</label>
+                            <input type="url" id="targetUrl" name="target" 
+                                   placeholder="https://example.com">
                         </div>
-                    </div>
-                    
-                    <!-- Manual Testing Options -->
-                    <div id="manualOptions">
-                        <h4 style="margin-top: 20px; margin-bottom: 10px; color: #666;">Manual Testing Modules</h4>
-                        <div class="checkbox-grid">
-                            <label class="checkbox-option">
-                                <input type="checkbox" name="endpoint_discovery" checked>
-                                <span>
-                                    <i class="fas fa-search"></i> Endpoint Discovery
-                                </span>
-                            </label>
-                            <label class="checkbox-option">
-                                <input type="checkbox" name="parameter_fuzzing" checked>
-                                <span>
-                                    <i class="fas fa-random"></i> Parameter Fuzzing
-                                </span>
-                            </label>
-                            <label class="checkbox-option">
-                                <input type="checkbox" name="callback_testing" checked>
-                                <span>
-                                    <i class="fas fa-phone"></i> Callback Testing
-                                </span>
-                            </label>
-                            <label class="checkbox-option">
-                                <input type="checkbox" name="internal_scanning" checked>
-                                <span>
-                                    <i class="fas fa-network-wired"></i> Internal Scanning
-                                </span>
-                            </label>
-                            <label class="checkbox-option">
-                                <input type="checkbox" name="docker_inspection">
-                                <span>
-                                    <i class="fab fa-docker"></i> Docker Inspection
-                                </span>
-                            </label>
-                            <label class="checkbox-option">
-                                <input type="checkbox" name="code_scanning">
-                                <span>
-                                    <i class="fas fa-file-code"></i> Code Scanning
-                                </span>
-                            </label>
-                        </div>
-                    </div>
-                </div>
 
-                <!-- Action Buttons -->
-                <div class="button-group">
+                        <div class="form-group">
+                            <label>Testing Mode</label>
+                            <div class="radio-group">
+                                <label>
+                                    <input type="radio" name="mode" value="blackbox" checked>
+                                    Black Box
+                                </label>
+                                <label>
+                                    <input type="radio" name="mode" value="graybox">
+                                    Gray Box
+                                </label>
+                                <label>
+                                    <input type="radio" name="mode" value="whitebox">
+                                    White Box
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="autoDiscovery" name="auto_discovery" checked>
+                                <strong>Auto Discovery Mode (Recommended)</strong>
+                            </label>
+                            <small>🔍 Automatically crawl website, discover all endpoints, detect parameters, and test for SSRF vulnerabilities</small>
+                        </div>
+
+                        <div id="manualTests" class="form-group" style="opacity: 0.5;">
+                            <label>Manual Tests (Enable by unchecking Auto Discovery)</label>
+                            <label><input type="checkbox" name="endpoint_discovery" disabled> 🎯 Endpoint Discovery Only</label>
+                            <label><input type="checkbox" name="parameter_fuzzing" disabled> 🔍 Parameter Fuzzing</label>
+                            <label><input type="checkbox" name="callback_testing" disabled> 📞 Callback Testing</label>
+                            <label><input type="checkbox" name="internal_scanning" disabled> 🌐 Internal Scanning</label>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="timeout">Timeout (seconds)</label>
+                                <input type="number" id="timeout" name="timeout" value="10" min="1" max="60">
+                            </div>
+                            <div class="form-group">
+                                <label for="threads">Threads</label>
+                                <input type="number" id="threads" name="threads" value="5" min="1" max="20">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Burp Import Tab Content -->
+                    <div class="config-tab-content" id="burpImportTab">
+                        <div class="form-group">
+                            <label for="burpFile">Upload Burp Suite File</label>
+                            <div class="file-upload-area" id="fileUploadArea">
+                                <input type="file" id="burpFile" name="har_file" accept=".json,.xml,.har,.txt" hidden>
+                                <div class="file-upload-content">
+                                    <div class="file-upload-icon">📄</div>
+                                    <p class="file-upload-text">
+                                        <strong>Click to upload</strong> or drag and drop<br>
+                                        <small>Supported: Burp Suite JSON/XML exports, HAR files, or any text file</small>
+                                    </p>
+                                    <div class="file-selected" id="fileSelected" style="display: none;">
+                                        <span id="fileName"></span>
+                                        <button type="button" class="btn-remove-file" id="removeFile">✕</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="burpTargetUrl">Base URL (Optional)</label>
+                            <input type="url" id="burpTargetUrl" name="burp_target" 
+                                   placeholder="https://example.com">
+                            <small>💡 If not provided, will be extracted from the uploaded file</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Endpoint Source</label>
+                            <div class="radio-group">
+                                <label>
+                                    <input type="radio" name="endpoint_source" value="file" checked>
+                                    Only from file
+                                </label>
+                                <label>
+                                    <input type="radio" name="endpoint_source" value="url">
+                                    Discover more from URL
+                                </label>
+                                <label>
+                                    <input type="radio" name="endpoint_source" value="both">
+                                    Both file & discovery
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Tests to Run</label>
+                            <label><input type="checkbox" name="burp_parameter_fuzzing" checked> Parameter Fuzzing</label>
+                            <label><input type="checkbox" name="burp_callback_testing" checked> Callback Testing</label>
+                            <label><input type="checkbox" name="burp_internal_scanning" checked> Internal Scanning</label>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="burpTimeout">Timeout (seconds)</label>
+                                <input type="number" id="burpTimeout" name="burp_timeout" value="10" min="1" max="60">
+                            </div>
+                            <div class="form-group">
+                                <label for="burpThreads">Threads</label>
+                                <input type="number" id="burpThreads" name="burp_threads" value="5" min="1" max="20">
+                            </div>
+                        </div>
+                    </div>
+
                     <button type="submit" class="btn btn-primary" id="startBtn">
-                        <i class="fas fa-play"></i> Start Scan
+                        🚀 Start Scan
                     </button>
-                    <button type="button" class="btn btn-danger" id="stopBtn" disabled>
-                        <i class="fas fa-stop"></i> Stop Scan
-                    </button>
-                    <button type="button" class="btn btn-warning" id="resetBtn">
-                        <i class="fas fa-redo"></i> Reset
-                    </button>
-                    <button type="button" class="btn btn-secondary" id="exportBtn">
-                        <i class="fas fa-download"></i> Export Report
-                    </button>
-                </div>
-            </form>
-        </section>
+                </form>
+            </section>
 
-        <!-- Progress Panel -->
-        <section class="panel progress-panel" id="progressPanel" style="display: none;">
-            <h2><i class="fas fa-tasks"></i> Scan Progress</h2>
-            
-            <div class="progress-info">
-                <div class="progress-header">
-                    <span id="currentPhase">Initializing...</span>
-                    <span id="progressPercent">0%</span>
-                </div>
-                <div class="progress-bar">
-                    <div class="progress-fill" id="progressFill"></div>
-                </div>
-            </div>
-
-            <div class="scan-stats">
-                <div class="stat-card">
-                    <i class="fas fa-bug"></i>
-                    <div class="stat-content">
-                        <span class="stat-label">Findings</span>
-                        <span class="stat-value" id="findingsCount">0</span>
+            <!-- Results Section -->
+            <section class="card" id="resultsSection" style="display: none;">
+                <div class="section-header">
+                    <h2>Scan Results</h2>
+                    <div class="controls">
+                        <button class="btn btn-secondary" id="backBtn">Back</button>
+                        <button class="btn btn-secondary" id="exportBtn">Export</button>
+                        <button class="btn btn-danger" id="stopBtn">Stop</button>
                     </div>
                 </div>
-                <div class="stat-card">
-                    <i class="fas fa-clock"></i>
-                    <div class="stat-content">
-                        <span class="stat-label">Elapsed Time</span>
-                        <span class="stat-value" id="elapsedTime">00:00</span>
+
+                <!-- Stats -->
+                <div class="stats">
+                    <div class="stat-box">
+                        <div class="stat-value" id="statEndpoints">0</div>
+                        <div class="stat-label">Endpoints</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value" id="statParams">0</div>
+                        <div class="stat-label">Parameters</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value" id="statFindings">0</div>
+                        <div class="stat-label">Findings</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value" id="statCritical">0</div>
+                        <div class="stat-label">Critical</div>
                     </div>
                 </div>
-                <div class="stat-card">
-                    <i class="fas fa-server"></i>
-                    <div class="stat-content">
-                        <span class="stat-label">Callback Server</span>
-                        <span class="stat-value" id="callbackStatus">
-                            <span class="badge badge-success">Active</span>
-                        </span>
+
+                <!-- Progress -->
+                <div class="progress-section">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill">0%</div>
+                    </div>
+                    <div class="progress-info">
+                        <span id="progressPhase">Initializing...</span>
+                        <span id="progressTime">0s</span>
                     </div>
                 </div>
-            </div>
-        </section>
 
-        <!-- Discovered Endpoints Panel -->
-        <section class="panel endpoints-panel" id="endpointsPanel" style="display: none;">
-            <h2><i class="fas fa-sitemap"></i> Discovered Endpoints <span id="endpointsCount" class="badge badge-info">0</span></h2>
-            
-            <div class="endpoints-list" id="endpointsList">
-                <div class="empty-state">
-                    <i class="fas fa-search"></i>
-                    <p>No endpoints discovered yet. Start a scan to see results.</p>
+                <!-- Tabs -->
+                <div class="tabs">
+                    <button class="tab active" data-tab="logs">Logs</button>
+                    <button class="tab" data-tab="endpoints">Endpoints</button>
+                    <button class="tab" data-tab="findings">Findings</button>
                 </div>
-            </div>
-        </section>
 
-        <!-- Findings Panel -->
-        <section class="panel findings-panel">
-            <h2><i class="fas fa-exclamation-triangle"></i> Findings</h2>
-            
-            <div class="findings-filter">
-                <button class="filter-btn active" data-filter="all">
-                    All <span class="badge" id="countAll">0</span>
-                </button>
-                <button class="filter-btn" data-filter="CRITICAL">
-                    Critical <span class="badge badge-critical" id="countCritical">0</span>
-                </button>
-                <button class="filter-btn" data-filter="HIGH">
-                    High <span class="badge badge-high" id="countHigh">0</span>
-                </button>
-                <button class="filter-btn" data-filter="MEDIUM">
-                    Medium <span class="badge badge-medium" id="countMedium">0</span>
-                </button>
-                <button class="filter-btn" data-filter="LOW">
-                    Low <span class="badge badge-low" id="countLow">0</span>
-                </button>
-            </div>
-
-            <div class="findings-list" id="findingsList">
-                <div class="empty-state">
-                    <i class="fas fa-search"></i>
-                    <p>No findings yet. Start a scan to detect vulnerabilities.</p>
+                <!-- Tab Content -->
+                <div class="tab-content active" id="logsTab">
+                    <div class="logs" id="logsList"></div>
                 </div>
-            </div>
-        </section>
 
-        <!-- Console Panel -->
-        <section class="panel console-panel">
-            <h2>
-                <i class="fas fa-terminal"></i> Console Output
-                <button class="btn-small" id="clearConsoleBtn">
-                    <i class="fas fa-trash"></i> Clear
-                </button>
-            </h2>
-            
-            <div class="console" id="console">
-                <div class="console-line info">
-                    <span class="timestamp">--:--:--</span>
-                    <span class="message">Ready to start scanning...</span>
+                <div class="tab-content" id="endpointsTab">
+                    <div class="list" id="endpointsList">
+                        <p class="empty">No endpoints discovered yet</p>
+                    </div>
                 </div>
-            </div>
-        </section>
-    </main>
 
-    <!-- Footer -->
-    <footer>
-        <div class="container">
-            <p>
-                <i class="fas fa-shield-alt"></i> 
-                Microservice SSRF Pentest Toolkit v1.0 | 
-                Built with <i class="fas fa-heart"></i> for Security Researchers
-            </p>
-        </div>
-    </footer>
+                <div class="tab-content" id="findingsTab">
+                    <div class="list" id="findingsList">
+                        <p class="empty">No findings yet</p>
+                    </div>
+                </div>
+            </section>
 
-    <!-- Scripts -->
+            <!-- Notifications -->
+            <div id="notifications"></div>
+        </main>
+    </div>
+
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>

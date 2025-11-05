@@ -74,10 +74,10 @@ class CallbackServer:
         self.callbacks = []
         self._callback_addresses = []  # Store possible callback addresses
     
-    def start(self):
+    def start(self) -> str:
         """Start callback server"""
         if self.is_running:
-            return
+            return f"http://{self.host}:{self.port}"
         
         self.server = HTTPServer((self.host, self.port), CallbackHandler)
         self.thread = threading.Thread(target=self.server.serve_forever)
@@ -86,6 +86,7 @@ class CallbackServer:
         self.is_running = True
         
         print(f"[+] Callback server started on {self.host}:{self.port}")
+        return f"http://{self.host}:{self.port}"
     
     def stop(self):
         """Stop callback server"""
@@ -93,6 +94,16 @@ class CallbackServer:
             self.server.shutdown()
             self.is_running = False
             print("[+] Callback server stopped")
+    
+    def clear_callbacks(self):
+        """Clear all stored callbacks"""
+        self.callbacks = []
+        # Clear queue
+        while not CallbackHandler.callback_queue.empty():
+            try:
+                CallbackHandler.callback_queue.get_nowait()
+            except:
+                break
     
     def get_callbacks(self, timeout: int = 5) -> List[Dict]:
         """Lấy callbacks đã nhận được"""
