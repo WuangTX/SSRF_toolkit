@@ -31,7 +31,8 @@ const findingsList = document.getElementById('findingsList');
 
 // State
 let startTime = Date.now();
-let timerInterval;
+// Use a single global timer handle to avoid duplicate timers across templates/scripts
+window.ssrfTimerInterval = window.ssrfTimerInterval || null;
 let counts = {
     endpoints: 0,
     params: 0,
@@ -230,9 +231,11 @@ scanForm.addEventListener('submit', async function(e) {
             configSection.style.display = 'none';
             resultsSection.style.display = 'block';
             
-            // Start timer
+            // Start timer (only if not already running)
             startTime = Date.now();
-            timerInterval = setInterval(updateTimer, 1000);
+            if (!window.ssrfTimerInterval) {
+                window.ssrfTimerInterval = setInterval(updateTimer, 1000);
+            }
         } else {
             showNotification(result.error || 'Failed to start scan', 'error');
             startBtn.disabled = false;
@@ -256,7 +259,10 @@ backBtn.addEventListener('click', function() {
     resultsSection.style.display = 'none';
     configSection.style.display = 'block';
     startBtn.disabled = false;
-    clearInterval(timerInterval);
+    if (window.ssrfTimerInterval) {
+        clearInterval(window.ssrfTimerInterval);
+        window.ssrfTimerInterval = null;
+    }
 });
 
 // Stop button
@@ -307,6 +313,18 @@ socket.on('progress', function(data) {
     progressFill.style.width = data.percent + '%';
     progressFill.textContent = data.percent + '%';
     progressPhase.textContent = data.phase || 'Processing...';
+    // Defensive: stop timer if backend reports completion
+    try {
+        if (data.percent >= 100) {
+            console.log('Progress 100% received from backend, clearing timer');
+            if (window.ssrfTimerInterval) {
+                clearInterval(window.ssrfTimerInterval);
+                window.ssrfTimerInterval = null;
+            }
+        }
+    } catch (e) {
+        console.warn('Error while handling progress percent check', e);
+    }
 });
 
 socket.on('log', function(data) {
@@ -352,8 +370,17 @@ socket.on('finding', function(data) {
     item.className = `finding-item ${data.severity.toLowerCase()}`;
     item.innerHTML = `
         <div class="finding-severity ${data.severity.toLowerCase()}">${data.severity}</div>
-        <div class="finding-message">${data.message}</div>
+        <div class="finding-message">${data.title || data.message}</div>
     `;
+    
+    // Store finding data for modal
+    item.dataset.finding = JSON.stringify(data);
+    
+    // Click handler to open modal
+    item.addEventListener('click', function() {
+        showFindingModal(JSON.parse(this.dataset.finding));
+    });
+    
     findingsList.insertBefore(item, findingsList.firstChild);
     
     if (data.severity === 'CRITICAL') {
@@ -362,7 +389,11 @@ socket.on('finding', function(data) {
 });
 
 socket.on('scan_complete', function(data) {
-    clearInterval(timerInterval);
+    console.log('socket.on scan_complete payload:', data);
+    if (window.ssrfTimerInterval) {
+        clearInterval(window.ssrfTimerInterval);
+        window.ssrfTimerInterval = null;
+    }
     showNotification('Scan completed successfully!', 'success');
     stopBtn.disabled = true;
     progressFill.style.width = '100%';
@@ -371,7 +402,124 @@ socket.on('scan_complete', function(data) {
 });
 
 socket.on('scan_error', function(data) {
-    clearInterval(timerInterval);
+    console.error('socket.on scan_error payload:', data);
+    if (window.ssrfTimerInterval) {
+        clearInterval(window.ssrfTimerInterval);
+        window.ssrfTimerInterval = null;
+    }
     showNotification(`Scan error: ${data.message}`, 'error');
     stopBtn.disabled = true;
+});
+
+// Modal Functions
+let currentFinding = null;
+
+function showFindingModal(finding) {
+    currentFinding = finding;
+    const modal = document.getElementById('findingModal');
+    
+    // Populate modal content
+    document.getElementById('modalTitle').textContent = finding.title || 'Vulnerability Details';
+    
+    const severityElem = document.getElementById('modalSeverity');
+    severityElem.textContent = finding.severity;
+    severityElem.className = `detail-value ${finding.severity.toLowerCase()}`;
+    
+    document.getElementById('modalCategory').textContent = finding.category || 'N/A';
+    document.getElementById('modalCvss').textContent = finding.cvss_score || 'N/A';
+    document.getElementById('modalCwe').textContent = finding.cwe_id || 'N/A';
+    document.getElementById('modalUrl').textContent = finding.affected_url || 'N/A';
+    document.getElementById('modalMethod').textContent = finding.method || 'N/A';
+    document.getElementById('modalParameter').textContent = finding.parameter || 'N/A';
+    document.getElementById('modalOriginal').textContent = finding.original_value || 'N/A';
+    document.getElementById('modalDescription').textContent = finding.description || '';
+    document.getElementById('modalEvidence').textContent = finding.evidence || 'No evidence available';
+    document.getElementById('modalPoc').textContent = finding.proof_of_concept || finding.payload || 'No POC available';
+    
+    // Remediation
+    const remediationDiv = document.getElementById('modalRemediation');
+    if (finding.remediation) {
+        const steps = finding.remediation.split('\n');
+        remediationDiv.innerHTML = '<ol>' + steps.map(step => 
+            step.trim() ? `<li>${step.replace(/^\d+\.\s*/, '')}</li>` : ''
+        ).join('') + '</ol>';
+    } else {
+        remediationDiv.innerHTML = '<p>No remediation guidance available.</p>';
+    }
+    
+    // References
+    const refList = document.getElementById('modalReferences');
+    refList.innerHTML = '';
+    if (finding.references && finding.references.length > 0) {
+        finding.references.forEach(ref => {
+            const li = document.createElement('li');
+            li.innerHTML = `<a href="${ref}" target="_blank">${ref}</a>`;
+            refList.appendChild(li);
+        });
+    } else {
+        refList.innerHTML = '<li>No references available</li>';
+    }
+    
+    // Hide attack result
+    document.getElementById('attackResult').style.display = 'none';
+    
+    // Show modal
+    modal.classList.add('active');
+}
+
+function closeFindingModal() {
+    const modal = document.getElementById('findingModal');
+    modal.classList.remove('active');
+    currentFinding = null;
+}
+
+async function executeAttack() {
+    if (!currentFinding) return;
+    
+    const attackResult = document.getElementById('attackResult');
+    const attackOutput = document.getElementById('attackOutput');
+    
+    attackResult.style.display = 'block';
+    attackOutput.textContent = 'Executing attack... Please wait...';
+    
+    try {
+        const response = await fetch('/api/execute_attack', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                url: currentFinding.affected_url,
+                method: currentFinding.method,
+                parameter: currentFinding.parameter,
+                payload: currentFinding.attack_vector || currentFinding.payload
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            attackOutput.textContent = `✅ Attack executed successfully!\n\nResponse Status: ${result.status_code}\n\nResponse Body:\n${result.response_body}`;
+        } else {
+            attackOutput.textContent = `❌ Attack failed: ${result.error}`;
+        }
+    } catch (error) {
+        attackOutput.textContent = `❌ Error executing attack: ${error.message}`;
+    }
+}
+
+function copyPoc() {
+    const pocText = document.getElementById('modalPoc').textContent;
+    navigator.clipboard.writeText(pocText).then(() => {
+        showNotification('POC copied to clipboard!', 'success');
+    }).catch(err => {
+        showNotification('Failed to copy POC', 'error');
+    });
+}
+
+// Close modal when clicking outside
+document.getElementById('findingModal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeFindingModal();
+    }
 });

@@ -11,6 +11,13 @@
         <header>
             <h1>🛡️ SSRF Pentest Toolkit</h1>
             <p>Microservice Security Testing Suite</p>
+            <div id="callbackServerInfo" style="margin-top: 10px; padding: 10px; background: #f0f9ff; border-left: 4px solid #3b82f6; border-radius: 4px;">
+                <strong>🎯 Callback Server:</strong> 
+                <span id="callbackUrl">Checking...</span>
+                <a id="callbackDashboardLink" href="#" target="_blank" style="margin-left: 10px; color: #3b82f6; text-decoration: none; font-weight: bold;">
+                    📊 Open Dashboard
+                </a>
+            </div>
         </header>
 
         <main>
@@ -225,7 +232,163 @@
         </main>
     </div>
 
+    <!-- Finding Detail Modal -->
+    <div id="findingModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalTitle"></h2>
+                <button class="modal-close" onclick="closeFindingModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <!-- Details Section -->
+                <div class="modal-section">
+                    <h3>📋 Chi tiết lỗi</h3>
+                    <div class="detail-grid">
+                        <div class="detail-item">
+                            <span class="detail-label">Severity:</span>
+                            <span class="detail-value" id="modalSeverity"></span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Category:</span>
+                            <span class="detail-value" id="modalCategory"></span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">CVSS Score:</span>
+                            <span class="detail-value" id="modalCvss"></span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">CWE ID:</span>
+                            <span class="detail-value" id="modalCwe"></span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">URL:</span>
+                            <span class="detail-value" id="modalUrl"></span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Method:</span>
+                            <span class="detail-value" id="modalMethod"></span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Parameter:</span>
+                            <span class="detail-value" id="modalParameter"></span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Original Value:</span>
+                            <span class="detail-value" id="modalOriginal"></span>
+                        </div>
+                    </div>
+                    <div class="detail-item full-width">
+                        <span class="detail-label">Description:</span>
+                        <p id="modalDescription"></p>
+                    </div>
+                    <div class="detail-item full-width">
+                        <span class="detail-label">Evidence:</span>
+                        <pre id="modalEvidence"></pre>
+                    </div>
+                </div>
+
+                <!-- Attack Section -->
+                <div class="modal-section attack-section">
+                    <h3>⚔️ Tấn công (Attack POC)</h3>
+                    <div class="attack-controls">
+                        <button class="btn btn-danger" onclick="executeAttack()">
+                            🚀 Execute Attack
+                        </button>
+                        <button class="btn btn-secondary" onclick="copyPoc()">
+                            📋 Copy POC
+                        </button>
+                    </div>
+                    <div class="code-block">
+                        <pre id="modalPoc"></pre>
+                    </div>
+                    <div id="attackResult" class="attack-result" style="display: none;">
+                        <h4>Attack Result:</h4>
+                        <pre id="attackOutput"></pre>
+                    </div>
+                </div>
+
+                <!-- Remediation Section -->
+                <div class="modal-section remediation-section">
+                    <h3>🛡️ Khuyến cáo chỉnh sửa (Remediation)</h3>
+                    <div id="modalRemediation" class="remediation-content"></div>
+                </div>
+
+                <!-- References -->
+                <div class="modal-section">
+                    <h3>📚 References</h3>
+                    <ul id="modalReferences"></ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script>
+        // Check callback server status and update link
+        async function updateCallbackServerInfo() {
+            console.log('🔍 Checking callback server status...');
+            
+            // First, always try localhost:8888 since it's the most reliable
+            try {
+                const resp = await fetch('https://unsly-mariam-senilely.ngrok-free.dev/health', {
+                    method: 'GET',
+                    mode: 'cors',
+                    cache: 'no-cache'
+                });
+                
+                if (resp.ok) {
+                    const data = await resp.json();
+                    console.log('✅ Callback server is running:', data);
+                    
+                    // Now try to get ngrok URL
+                    try {
+                        const ngrokResp = await fetch('http://127.0.0.1:4040/api/tunnels', {
+                            method: 'GET',
+                            cache: 'no-cache'
+                        });
+                        const ngrokData = await ngrokResp.json();
+                        
+                        if (ngrokData.tunnels && ngrokData.tunnels.length > 0) {
+                            // Prefer HTTPS tunnel
+                            const httpsTunnel = ngrokData.tunnels.find(t => t.proto === 'https');
+                            const tunnel = httpsTunnel || ngrokData.tunnels[0];
+                            const publicUrl = tunnel.public_url;
+                            
+                            console.log('🌐 Ngrok tunnel found:', publicUrl);
+                            document.getElementById('callbackUrl').innerHTML = 
+                                `<code style="background: #e0f2fe; padding: 2px 8px; border-radius: 3px;">${publicUrl}</code> 
+                                 <span style="color: #10b981;">✓ Ngrok Active</span>`;
+                            document.getElementById('callbackDashboardLink').href = publicUrl;
+                            document.getElementById('callbackDashboardLink').style.display = 'inline';
+                            return;
+                        }
+                    } catch (ngrokError) {
+                        console.log('⚠️ Ngrok not available:', ngrokError.message);
+                    }
+                    
+                    // Callback server running but no ngrok
+                    document.getElementById('callbackUrl').innerHTML = 
+                        `<code style="background: #fef3c7; padding: 2px 8px; border-radius: 3px;">https://unsly-mariam-senilely.ngrok-free.dev</code>
+                         <span style="color: #f59e0b;">⚠ Local Only (use ngrok for remote)</span>`;
+                    document.getElementById('callbackDashboardLink').href = 'https://unsly-mariam-senilely.ngrok-free.dev';
+                    document.getElementById('callbackDashboardLink').style.display = 'inline';
+                    return;
+                }
+            } catch (error) {
+                console.error('❌ Callback server not reachable:', error.message);
+            }
+            
+            // Server not available
+            document.getElementById('callbackUrl').innerHTML = 
+                `<span style="color: #ef4444;">✗ Not running</span>`;
+            document.getElementById('callbackDashboardLink').style.display = 'none';
+        }
+        
+        // Update on page load and every 10 seconds
+        updateCallbackServerInfo();
+        setInterval(updateCallbackServerInfo, 10000);
+    </script>
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
 </html>
+

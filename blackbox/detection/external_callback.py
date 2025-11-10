@@ -52,11 +52,220 @@ class CallbackHandler(BaseHTTPRequestHandler):
         # Add to queue
         self.callback_queue.put(callback_data)
         
-        # Send response
-        self.send_response(200)
-        self.send_header('Content-Type', 'text/plain')
-        self.end_headers()
-        self.wfile.write(b'Callback received')
+        # ✅ ENHANCED: HTML response với callback details
+        if self.path == '/' or self.path == '':
+            # Root path - show welcome page
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/html; charset=utf-8')
+            self.end_headers()
+            html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SSRF Callback Server</title>
+    <style>
+        body {{
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }}
+        .container {{
+            background: white;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }}
+        h1 {{
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+        }}
+        .status {{
+            background: #2ecc71;
+            color: white;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }}
+        .info {{
+            background: #ecf0f1;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }}
+        .code {{
+            background: #2c3e50;
+            color: #2ecc71;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            overflow-x: auto;
+            margin: 10px 0;
+        }}
+        .warning {{
+            background: #f39c12;
+            color: white;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }}
+        table {{
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }}
+        th, td {{
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }}
+        th {{
+            background: #3498db;
+            color: white;
+        }}
+        .label {{
+            font-weight: bold;
+            color: #2c3e50;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎯 SSRF Callback Server</h1>
+        
+        <div class="status">
+            ✅ <strong>Server Status:</strong> RUNNING
+        </div>
+        
+        <div class="info">
+            <p class="label">📡 Callback Endpoint:</p>
+            <div class="code">http://localhost:{self.server.server_port}/your-test-id-here</div>
+        </div>
+        
+        <div class="warning">
+            ⚠️ <strong>Note:</strong> Bạn đang truy cập trực tiếp qua browser. 
+            Đây KHÔNG phải SSRF callback, chỉ là browser request thông thường.
+        </div>
+        
+        <h2>📖 How to Use</h2>
+        <table>
+            <tr>
+                <th>Step</th>
+                <th>Action</th>
+            </tr>
+            <tr>
+                <td>1️⃣</td>
+                <td>Generate unique test ID: <code>test_12345</code></td>
+            </tr>
+            <tr>
+                <td>2️⃣</td>
+                <td>Send SSRF payload with callback URL:<br>
+                    <code>http://your-ip:{self.server.server_port}/test_12345</code>
+                </td>
+            </tr>
+            <tr>
+                <td>3️⃣</td>
+                <td>Wait for target server to make request to callback URL</td>
+            </tr>
+            <tr>
+                <td>4️⃣</td>
+                <td>Check if callback with <code>test_12345</code> received → SSRF confirmed!</td>
+            </tr>
+        </table>
+        
+        <h2>📊 Recent Request (This One)</h2>
+        <div class="info">
+            <p><strong>Method:</strong> {method}</p>
+            <p><strong>Path:</strong> {self.path}</p>
+            <p><strong>Client:</strong> {self.client_address[0]}:{self.client_address[1]}</p>
+            <p><strong>User-Agent:</strong> {self.headers.get('User-Agent', 'N/A')}</p>
+            <p><strong>Time:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+        </div>
+        
+        <h2>🔥 Example SSRF Payloads</h2>
+        <div class="code">
+# GET with query parameter
+http://target.com/api/fetch?url=http://localhost:{self.server.server_port}/test1
+
+# POST with JSON
+POST http://target.com/api/check_price
+{{"compare_url": "http://localhost:{self.server.server_port}/test2"}}
+
+# POST with form data
+POST http://target.com/api/callback
+callback_url=http://localhost:{self.server.server_port}/test3
+        </div>
+        
+        <p style="text-align: center; color: #7f8c8d; margin-top: 40px;">
+            💡 Tip: Use Web UI at <a href="http://localhost:5000">http://localhost:5000</a> for automated testing
+        </p>
+    </div>
+</body>
+</html>
+            """
+            self.wfile.write(html.encode('utf-8'))
+        else:
+            # Non-root path - potential SSRF callback
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/html; charset=utf-8')
+            self.end_headers()
+            html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Callback Received</title>
+    <style>
+        body {{
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #2c3e50;
+            color: #ecf0f1;
+        }}
+        .success {{
+            background: #27ae60;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            margin-bottom: 20px;
+        }}
+        .details {{
+            background: #34495e;
+            padding: 20px;
+            border-radius: 5px;
+        }}
+        pre {{
+            background: #1a1a1a;
+            color: #2ecc71;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }}
+    </style>
+</head>
+<body>
+    <div class="success">
+        <h1>✅ Callback Received!</h1>
+        <p>SSRF vulnerability may be confirmed if this is from target server.</p>
+    </div>
+    <div class="details">
+        <h2>📡 Request Details:</h2>
+        <pre>Method:  {method}
+Path:    {self.path}
+From:    {self.client_address[0]}:{self.client_address[1]}
+Time:    {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+User-Agent: {self.headers.get('User-Agent', 'N/A')}
+Host: {self.headers.get('Host', 'N/A')}
+</pre>
+    </div>
+</body>
+</html>
+            """
+            self.wfile.write(html.encode('utf-8'))
     
     def log_message(self, format, *args):
         """Suppress default logging"""
@@ -181,6 +390,39 @@ class CallbackServer:
                 unique_addresses.append(addr)
         
         return unique_addresses
+    
+    def check_callback_received(self, path: str, timeout: int = 2) -> bool:
+        """
+        Check if a specific callback was received
+        
+        Args:
+            path: The expected path (e.g., "/ssrf_test_1_compare_url")
+            timeout: How long to wait for the callback
+        
+        Returns:
+            True if callback was received, False otherwise
+        """
+        start_time = time.time()
+        
+        # First, check existing callbacks
+        for callback in self.callbacks:
+            if callback.get('path', '').startswith(path):
+                return True
+        
+        # Wait for new callbacks
+        while time.time() - start_time < timeout:
+            try:
+                callback = CallbackHandler.callback_queue.get(timeout=0.1)
+                self.callbacks.append(callback)
+                
+                # Check if this is the callback we're looking for
+                if callback.get('path', '').startswith(path):
+                    return True
+                    
+            except:
+                continue
+                
+        return False
     
     def get_callback_url(self, path: str = '', address: str = None) -> str:
         """
@@ -390,6 +632,34 @@ class CloudCallbackService:
             return response.json()
         except:
             return []
+
+
+class MockCallbackServer:
+    """
+    Mock callback server for PUBLIC callback URLs (e.g., interact.sh, oast.fun)
+    
+    Không chạy HTTP server, chỉ return empty callbacks (vì polling được handle externally)
+    """
+    def __init__(self, callback_url: str):
+        self.callback_url = callback_url
+    
+    def get_callback_url(self) -> str:
+        return self.callback_url
+    
+    def get_callbacks(self) -> List[Dict]:
+        """
+        Return empty list vì public callback services không support realtime polling
+        
+        User phải check manually trên web interface của service (e.g., interact.sh)
+        """
+        return []
+    
+    def clear_callbacks(self):
+        pass
+    
+    def stop(self):
+        pass
+
 
 if __name__ == "__main__":
     # Test callback server

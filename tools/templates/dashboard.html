@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Callback Server Dashboard</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            padding: 20px;
+        }
+        .container { max-width: 1600px; margin: 0 auto; }
+        h1 { 
+            font-size: 28px; 
+            margin-bottom: 10px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .stat-card {
+            background: #1e293b;
+            padding: 20px;
+            border-radius: 10px;
+            border-left: 4px solid #667eea;
+        }
+        .stat-label { font-size: 12px; color: #94a3b8; text-transform: uppercase; }
+        .stat-value { font-size: 32px; font-weight: bold; margin-top: 5px; }
+        .controls {
+            margin: 20px 0;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+        button:hover { background: #5568d3; transform: translateY(-1px); }
+        button.danger { background: #ef4444; }
+        button.danger:hover { background: #dc2626; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .auto-refresh {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: #1e293b;
+            padding: 10px 15px;
+            border-radius: 6px;
+        }
+        .auto-refresh input { margin: 0; }
+        .filter-section {
+            background: #1e293b;
+            padding: 15px;
+            border-radius: 6px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+        .filter-section label { color: #94a3b8; font-size: 14px; }
+        .service-list {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 10px;
+        }
+        .service-chip {
+            background: #334155;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .service-chip:hover { background: #667eea; }
+        .service-chip.active { background: #667eea; }
+        .pagination {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin: 15px 0;
+        }
+        .pagination span { color: #94a3b8; }
+        .pagination select {
+            background: #1e293b;
+            color: #e2e8f0;
+            border: 1px solid #334155;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        table {
+            width: 100%;
+            background: #1e293b;
+            border-radius: 10px;
+            overflow: hidden;
+            border-collapse: collapse;
+        }
+        thead { background: #334155; }
+        th {
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 12px;
+            text-transform: uppercase;
+            color: #94a3b8;
+        }
+        td {
+            padding: 15px;
+            border-top: 1px solid #334155;
+        }
+        tr:hover { background: #2d3748; }
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .badge.GET { background: #10b981; color: white; }
+        .badge.POST { background: #3b82f6; color: white; }
+        .badge.PUT { background: #f59e0b; color: white; }
+        .badge.DELETE { background: #ef4444; color: white; }
+        .service-badge { background: #667eea; color: white; }
+        .code {
+            font-family: 'Courier New', monospace;
+            background: #0f172a;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 12px;
+        }
+        .no-data {
+            text-align: center;
+            padding: 60px;
+            color: #64748b;
+            font-size: 16px;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8);
+            z-index: 1000;
+            overflow-y: auto;
+        }
+        .modal-content {
+            background: #1e293b;
+            margin: 40px auto;
+            padding: 30px;
+            border-radius: 10px;
+            max-width: 900px;
+            position: relative;
+        }
+        .modal-close {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            font-size: 28px;
+            cursor: pointer;
+            color: #94a3b8;
+        }
+        .modal-close:hover { color: #e2e8f0; }
+        .detail-section { margin: 20px 0; }
+        .detail-section h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+        .detail-grid { display: grid; gap: 10px; }
+        .detail-item {
+            background: #0f172a;
+            padding: 10px;
+            border-radius: 6px;
+            border-left: 3px solid #667eea;
+        }
+        .detail-label {
+            font-size: 11px;
+            color: #94a3b8;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+        }
+        .detail-value {
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            word-break: break-all;
+        }
+        pre {
+            background: #0f172a;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+        .pulse { animation: pulse 2s infinite; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎯 Callback Server Dashboard</h1>
+        <p style="color: #94a3b8; margin-bottom: 20px;">Realtime SSRF Callback Monitor with Database Storage</p>
+        
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-label">Total Callbacks</div>
+                <div class="stat-value" id="totalCount">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Last Received</div>
+                <div class="stat-value" id="lastReceived" style="font-size: 16px;">Never</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Unique Services</div>
+                <div class="stat-value" id="uniqueServices">0</div>
+            </div>
+        </div>
+        
+        <div class="filter-section">
+            <label>Filter by Service:</label>
+            <div id="serviceFilters" class="service-list"></div>
+        </div>
+        
+        <div class="controls">
+            <button onclick="refreshData()">🔄 Refresh Now</button>
+            <button onclick="clearCallbacks()" class="danger">🗑️ Clear All</button>
+            <button onclick="exportData()">💾 Export JSON</button>
+            <div class="auto-refresh">
+                <input type="checkbox" id="autoRefresh" checked>
+                <label for="autoRefresh">Auto-refresh (2s)</label>
+            </div>
+        </div>
+        
+        <div class="pagination">
+            <button id="prevBtn" onclick="prevPage()" disabled>◀ Previous</button>
+            <span id="pageInfo">Page 1</span>
+            <button id="nextBtn" onclick="nextPage()">Next ▶</button>
+            <label style="margin-left: 20px;">Show:</label>
+            <select id="limitSelect" onchange="changeLimit()">
+                <option value="20">20</option>
+                <option value="50">50</option>
+                <option value="100" selected>100</option>
+                <option value="200">200</option>
+            </select>
+        </div>
+        
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Time</th>
+                    <th>Method</th>
+                    <th>Path</th>
+                    <th>From IP</th>
+                    <th>Service</th>
+                    <th>User-Agent</th>
+                    <th>Body</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody id="callbackTable">
+                <tr>
+                    <td colspan="9" class="no-data">
+                        <div class="pulse">Waiting for callbacks...</div>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+        
+        <div class="pagination" style="margin-top: 15px;">
+            <button onclick="prevPage()" disabled id="prevBtn2">◀ Previous</button>
+            <span id="pageInfo2">Page 1</span>
+            <button onclick="nextPage()" id="nextBtn2">Next ▶</button>
+        </div>
+    </div>
+    
+    <div id="detailModal" class="modal">
+        <div class="modal-content">
+            <span class="modal-close" onclick="closeModal()">&times;</span>
+            <div id="modalBody"></div>
+        </div>
+    </div>
+    
+    <script>
+        let autoRefreshInterval = null;
+        let currentPage = 1;
+        let limit = 100;
+        let totalCallbacks = 0;
+        let currentService = null;
+        
+        function formatTime(isoString) {
+            const date = new Date(isoString);
+            return date.toLocaleTimeString() + '.' + date.getMilliseconds();
+        }
+        
+        function truncate(str, len) {
+            return str && str.length > len ? str.substring(0, len) + '...' : str;
+        }
+        
+        async function refreshData() {
+            try {
+                const offset = (currentPage - 1) * limit;
+                let url = '/api/callbacks?limit=' + limit + '&offset=' + offset;
+                if (currentService) {
+                    url += '&service=' + encodeURIComponent(currentService);
+                }
+                
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                totalCallbacks = data.total;
+                document.getElementById('totalCount').textContent = data.total;
+                document.getElementById('uniqueServices').textContent = data.unique_services;
+                
+                if (data.callbacks.length > 0) {
+                    const latest = data.callbacks[0];
+                    document.getElementById('lastReceived').textContent = formatTime(latest.timestamp);
+                }
+                
+                renderTable(data.callbacks);
+                renderServiceFilters(data.services);
+                updatePagination();
+            } catch (error) {
+                console.error('Refresh failed:', error);
+            }
+        }
+        
+        function renderServiceFilters(services) {
+            const container = document.getElementById('serviceFilters');
+            
+            let html = '<div class="service-chip ' + (!currentService ? 'active' : '') + '" onclick="filterByService(null)">All</div>';
+            
+            services.forEach(s => {
+                const active = currentService === s.service ? 'active' : '';
+                html += `<div class="service-chip ${active}" onclick="filterByService('${s.service}')">${s.service} (${s.count})</div>`;
+            });
+            
+            container.innerHTML = html;
+        }
+        
+        function filterByService(service) {
+            currentService = service;
+            currentPage = 1;
+            refreshData();
+        }
+        
+        function renderTable(callbacks) {
+            const tbody = document.getElementById('callbackTable');
+            
+            if (callbacks.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="9" class="no-data">No callbacks yet</td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = callbacks.map(cb => `
+                <tr>
+                    <td><span class="code">#${cb.id}</span></td>
+                    <td>${formatTime(cb.timestamp)}</td>
+                    <td><span class="badge ${cb.method}">${cb.method}</span></td>
+                    <td><span class="code">${truncate(cb.path, 30)}</span></td>
+                    <td>${cb.remote_addr}</td>
+                    <td><span class="badge service-badge">${cb.service_detected}</span></td>
+                    <td>${truncate(cb.user_agent, 40)}</td>
+                    <td>${cb.body_length > 0 ? cb.body_length + ' bytes' : '-'}</td>
+                    <td><button onclick="viewDetails(${cb.id})">👁️ View</button></td>
+                </tr>
+            `).join('');
+        }
+        
+        function updatePagination() {
+            const totalPages = Math.ceil(totalCallbacks / limit);
+            const pageText = `Page ${currentPage} of ${totalPages} (${totalCallbacks} total)`;
+            
+            document.getElementById('pageInfo').textContent = pageText;
+            document.getElementById('pageInfo2').textContent = pageText;
+            
+            const hasPrev = currentPage > 1;
+            const hasNext = currentPage < totalPages;
+            
+            document.getElementById('prevBtn').disabled = !hasPrev;
+            document.getElementById('prevBtn2').disabled = !hasPrev;
+            document.getElementById('nextBtn').disabled = !hasNext;
+            document.getElementById('nextBtn2').disabled = !hasNext;
+        }
+        
+        function nextPage() {
+            currentPage++;
+            refreshData();
+        }
+        
+        function prevPage() {
+            if (currentPage > 1) {
+                currentPage--;
+                refreshData();
+            }
+        }
+        
+        function changeLimit() {
+            limit = parseInt(document.getElementById('limitSelect').value);
+            currentPage = 1;
+            refreshData();
+        }
+        
+        async function viewDetails(id) {
+            try {
+                const response = await fetch('/api/callbacks/' + id);
+                const cb = await response.json();
+                
+                const headers = Object.entries(cb.headers)
+                    .map(([k, v]) => `<div class="detail-item">
+                        <div class="detail-label">${k}</div>
+                        <div class="detail-value">${v}</div>
+                    </div>`).join('');
+                
+                document.getElementById('modalBody').innerHTML = `
+                    <h2>Callback Details #${cb.id}</h2>
+                    
+                    <div class="detail-section">
+                        <h3>📋 Request Info</h3>
+                        <div class="detail-grid">
+                            <div class="detail-item">
+                                <div class="detail-label">Timestamp</div>
+                                <div class="detail-value">${cb.timestamp}</div>
+                            </div>
+                            <div class="detail-item">
+                                <div class="detail-label">Method</div>
+                                <div class="detail-value">${cb.method}</div>
+                            </div>
+                            <div class="detail-item">
+                                <div class="detail-label">Path</div>
+                                <div class="detail-value">${cb.path}</div>
+                            </div>
+                            <div class="detail-item">
+                                <div class="detail-label">Remote Address</div>
+                                <div class="detail-value">${cb.remote_addr}</div>
+                            </div>
+                            <div class="detail-item">
+                                <div class="detail-label">Service Detected</div>
+                                <div class="detail-value">${cb.service_detected}</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="detail-section">
+                        <h3>📨 Headers</h3>
+                        <div class="detail-grid">
+                            ${headers}
+                        </div>
+                    </div>
+                    
+                    <div class="detail-section">
+                        <h3>📄 Body (${cb.body_length} bytes)</h3>
+                        <pre>${cb.body || '(empty)'}</pre>
+                    </div>
+                `;
+                
+                document.getElementById('detailModal').style.display = 'block';
+            } catch (error) {
+                alert('Failed to load details: ' + error);
+            }
+        }
+        
+        function closeModal() {
+            document.getElementById('detailModal').style.display = 'none';
+        }
+        
+        async function clearCallbacks() {
+            if (!confirm('Clear all callbacks from database?')) return;
+            
+            try {
+                await fetch('/api/callbacks', { method: 'DELETE' });
+                currentPage = 1;
+                refreshData();
+            } catch (error) {
+                alert('Failed to clear: ' + error);
+            }
+        }
+        
+        async function exportData() {
+            try {
+                const response = await fetch('/api/callbacks?limit=10000');
+                const data = await response.json();
+                
+                const blob = new Blob([JSON.stringify(data.callbacks, null, 2)], {
+                    type: 'application/json'
+                });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'callbacks_' + new Date().toISOString().slice(0,10) + '.json';
+                a.click();
+                URL.revokeObjectURL(url);
+            } catch (error) {
+                alert('Export failed: ' + error);
+            }
+        }
+        
+        // Auto-refresh control
+        document.getElementById('autoRefresh').addEventListener('change', function() {
+            if (this.checked) {
+                autoRefreshInterval = setInterval(refreshData, 2000);
+            } else {
+                clearInterval(autoRefreshInterval);
+            }
+        });
+        
+        // Close modal on outside click
+        window.onclick = function(event) {
+            const modal = document.getElementById('detailModal');
+            if (event.target == modal) {
+                closeModal();
+            }
+        }
+        
+        // Initial load and start auto-refresh
+        refreshData();
+        autoRefreshInterval = setInterval(refreshData, 2000);
+    </script>
+</body>
+</html>

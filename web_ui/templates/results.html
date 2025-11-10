@@ -589,9 +589,10 @@
         const endpointCount = document.getElementById('endpointCount');
         const findingCount = document.getElementById('findingCount');
         
-        // State
-        let startTime = Date.now();
-        let timerInterval;
+    // State
+    let startTime = Date.now();
+    // Use global timer handle to avoid duplicates between pages/scripts
+    window.ssrfTimerInterval = window.ssrfTimerInterval || null;
         let endpoints = [];
         let findings = [];
         let logs = [];
@@ -604,8 +605,10 @@
             progressTime.textContent = `Elapsed: ${minutes}m ${seconds}s`;
         }
         
-        // Start timer
-        timerInterval = setInterval(updateTimer, 1000);
+        // Start timer (only if not already running)
+        if (!window.ssrfTimerInterval) {
+            window.ssrfTimerInterval = setInterval(updateTimer, 1000);
+        }
         
         // Add notification
         function addNotification(message, type = 'info') {
@@ -748,6 +751,14 @@
             progressFill.style.width = data.percent + '%';
             progressFill.textContent = data.percent + '%';
             progressPhase.textContent = data.phase || 'Processing...';
+            // Defensive: stop timer if percent indicates completion
+            if (data.percent >= 100) {
+                console.log('results.html: progress 100% received, clearing timer');
+                if (window.ssrfTimerInterval) {
+                    clearInterval(window.ssrfTimerInterval);
+                    window.ssrfTimerInterval = null;
+                }
+            }
         });
         
         socket.on('log', function(data) {
@@ -763,7 +774,11 @@
         });
         
         socket.on('scan_complete', function(data) {
-            clearInterval(timerInterval);
+            console.log('results.html: received scan_complete', data);
+            if (window.ssrfTimerInterval) {
+                clearInterval(window.ssrfTimerInterval);
+                window.ssrfTimerInterval = null;
+            }
             statusBadge.innerHTML = '<i class="fas fa-check-circle"></i> Completed';
             statusBadge.className = 'status-badge completed';
             addNotification('✅ Scan completed successfully!', 'success');
@@ -771,17 +786,24 @@
         });
         
         socket.on('scan_error', function(data) {
-            clearInterval(timerInterval);
+            console.error('results.html: received scan_error', data);
+            if (window.ssrfTimerInterval) {
+                clearInterval(window.ssrfTimerInterval);
+                window.ssrfTimerInterval = null;
+            }
             statusBadge.innerHTML = '<i class="fas fa-times-circle"></i> Error';
             statusBadge.className = 'status-badge error';
             addNotification(`❌ Scan error: ${data.message}`, 'error');
         });
         
         // Stop button
-        stopBtn.addEventListener('click', function() {
+                stopBtn.addEventListener('click', function() {
             if (confirm('Are you sure you want to stop the scan?')) {
                 socket.emit('stop_scan');
-                clearInterval(timerInterval);
+                        if (window.ssrfTimerInterval) {
+                            clearInterval(window.ssrfTimerInterval);
+                            window.ssrfTimerInterval = null;
+                        }
                 statusBadge.innerHTML = '<i class="fas fa-stop-circle"></i> Stopped';
                 statusBadge.className = 'status-badge error';
                 addNotification('⏹️ Scan stopped by user', 'warning');

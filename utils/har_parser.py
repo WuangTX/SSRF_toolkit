@@ -45,11 +45,18 @@ class HARParser:
             parsed = urlparse(url)
             
             # Extract headers
+            # Normalize header names to lower-case and skip HTTP/2 pseudo-headers
             headers = {}
             for header in request.get('headers', []):
-                name = header.get('name', '')
+                name_raw = header.get('name', '')
                 value = header.get('value', '')
-                headers[name] = value
+                if not isinstance(name_raw, str):
+                    continue
+                name = name_raw.strip()
+                # skip invalid/empty names and HTTP/2 pseudo-headers (start with ':')
+                if not name or name.startswith(':'):
+                    continue
+                headers[name.lower()] = value
             
             # Extract query parameters
             query_params = {}
@@ -222,11 +229,16 @@ class HARParser:
             # Count methods
             method = req['method']
             methods[method] = methods.get(method, 0) + 1
-            
-            # Track content types
-            if 'Content-Type' in req['headers']:
-                content_types.add(req['headers']['Content-Type'])
-            
+
+            # Track content types (case-insensitive)
+            headers = req.get('headers', {}) or {}
+            ct = None
+            # headers keys are normalized to lower-case in parse()
+            if 'content-type' in headers:
+                ct = headers.get('content-type')
+            if ct:
+                content_types.add(ct)
+
             # Track hosts
             hosts.add(req['host'])
         

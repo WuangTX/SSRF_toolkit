@@ -20,7 +20,7 @@ class AutoDiscovery:
     Chỉ cần domain → Tool làm tất cả!
     """
     
-    def __init__(self, base_url: str, timeout: int = 10, max_depth: int = 3):
+    def __init__(self, base_url: str, timeout: int = 10, max_depth: int = 3, auth_token: str = None, auth_header: str = 'Authorization'):
         self.base_url = base_url.rstrip('/')
         self.timeout = timeout
         self.max_depth = max_depth
@@ -28,6 +28,11 @@ class AutoDiscovery:
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         })
+        
+        # ✅ Authentication support
+        if auth_token:
+            self.session.headers[auth_header] = auth_token
+            print(f"      🔑 Authentication: {auth_header}: {auth_token[:20]}...")
         
         self.visited_urls = set()
         self.discovered_endpoints = set()
@@ -38,9 +43,12 @@ class AutoDiscovery:
         self.base_domain = parsed.netloc
         self.base_scheme = parsed.scheme
     
-    def run_full_discovery(self) -> Dict:
+    def run_full_discovery(self, callback_url: str = None, callback_server=None) -> Dict:
         """
         🎯 MAIN METHOD: Chạy toàn bộ discovery pipeline
+        
+        Args:
+            callback_server: Existing callback server (optional)
         
         Returns:
             {
@@ -48,7 +56,8 @@ class AutoDiscovery:
                 'parameters': {...},
                 'forms': [...],
                 'api_endpoints': [...],
-                'testable_endpoints': [...]
+                'testable_endpoints': [...],
+                'ssrf_vulnerabilities': [...]
             }
         """
         print(f"\n{'='*60}")
@@ -94,9 +103,9 @@ class AutoDiscovery:
         results['testable_endpoints'] = testable
         print(f"      ✓ {len(testable)} endpoints ready for SSRF testing")
         
-        # Phase 6: SSRF Testing (NEW!)
+        # Phase 6: SSRF Testing (with callback server)
         print("\n[6/6] 🔥 Testing for SSRF vulnerabilities...")
-        ssrf_vulnerabilities = self._test_ssrf_vulnerabilities(testable)
+        ssrf_vulnerabilities = self._test_ssrf_vulnerabilities(testable, callback_url, callback_server)
         results['ssrf_vulnerabilities'] = ssrf_vulnerabilities
         print(f"      ✓ {len(ssrf_vulnerabilities)} SSRF vulnerabilities found!")
         
@@ -185,13 +194,13 @@ class AutoDiscovery:
                     self.discovered_parameters[base_url].add(param_name)
     
     def _discover_api_endpoints(self) -> Set[str]:
-        """Discover API endpoints bằng brute-force common paths"""
+        """✅ ENHANCED: Deep discovery với ID paths và SSRF-prone endpoints"""
         api_endpoints = set()
         
+        # Base API paths (removed fake/internal paths: /services, /service, /internal, /admin/api, /graphql)
         common_api_paths = [
             '/api', '/api/v1', '/api/v2', '/api/v3',
             '/rest', '/rest/v1',
-            '/graphql',
             '/api/users', '/api/user',
             '/api/products', '/api/product',
             '/api/inventory', '/api/items',
@@ -202,76 +211,140 @@ class AutoDiscovery:
             '/api/callback', '/api/webhook',
             '/api/proxy', '/api/redirect',
             '/api/image', '/api/file',
-            '/api/download', '/api/upload',
-            '/services', '/service',
-            '/internal', '/admin/api'
+            '/api/download', '/api/upload'
         ]
         
-        # SSRF-prone paths - paths likely to accept URLs
-        ssrf_paths = [
-            '/check_price', '/price_check', '/compare_price',
-            '/fetch', '/proxy', '/callback', '/webhook',
-            '/import', '/export', '/download',
-            '/validate', '/verify', '/check',
-            '/thumbnail', '/preview', '/image',
-            '/api_call', '/external', '/remote'
-        ]
+        # ✅ SMART: Chỉ test actions HỢP LÝ cho từng resource type
+        resource_actions_map = {
+            # Product/Inventory endpoints - price checking makes sense
+            'product': ['check_price', 'price_check', 'compare_price', 'compare', 'review', 'thumbnail', 'preview', 'image'],
+            'inventory': ['check_price', 'price_check', 'compare', 'image'],
+            'item': ['check_price', 'price_check', 'compare', 'review', 'image'],
+            'order': ['validate', 'verify', 'check'],
+            
+            # Data/Fetch endpoints - fetching/proxy makes sense
+            'data': ['fetch', 'proxy', 'import', 'export', 'download'],
+            'fetch': ['fetch', 'proxy', 'download'],
+            
+            # Callback/Webhook endpoints
+            'callback': ['callback', 'webhook', 'validate'],
+            'webhook': ['webhook', 'callback', 'verify'],
+            'proxy': ['proxy', 'fetch', 'forward'],
+            'redirect': ['proxy', 'forward', 'callback'],
+            
+            # File/Image endpoints
+            'image': ['image', 'thumbnail', 'preview', 'download', 'upload'],
+            'file': ['download', 'upload', 'fetch'],
+            'download': ['download', 'fetch'],
+            'upload': ['upload'],
+            
+            # Generic API endpoints - only test core SSRF actions
+            'api': ['fetch', 'callback', 'webhook', 'proxy'],
+            'rest': ['fetch', 'callback', 'webhook', 'proxy']
+        }
+        
+        # ✅ Test IDs (chỉ test 2-3 IDs thôi)
+        test_ids = ['1', '5']
         
         base_root = f"{self.base_scheme}://{self.base_domain}"
         
-        print(f"      Testing {len(common_api_paths)} common API paths...")
+        print(f"      🔍 Phase 1: Testing {len(common_api_paths)} base API paths...")
         
+        # Phase 1: Discover base API paths
+        discovered_bases = []
         for path in common_api_paths:
             test_url = base_root + path
             try:
-                response = self.session.get(test_url, timeout=5, allow_redirects=False)
+                response = self.session.get(test_url, timeout=3, allow_redirects=False)
                 
-                # Check if endpoint exists
-                if response.status_code in [200, 201, 400, 401, 403, 405, 422, 500]:
+                # ✅ FIXED: Chỉ accept status codes hợp lệ, BỎ 405!
+                if response.status_code in [200, 201, 400, 401, 403, 422, 500]:
                     api_endpoints.add(test_url)
-                    print(f"      ✓ Found: {path} [{response.status_code}]")
-                    
-                    # For discovered API endpoints, try to find SSRF-prone sub-paths
-                    self._discover_ssrf_endpoints(test_url, ssrf_paths, api_endpoints)
-                    
+                    discovered_bases.append(test_url)
+                    print(f"      ✓ {path} [{response.status_code}]")
             except:
                 pass
         
+        # Phase 2: Deep discovery - SMART action testing
+        print(f"\n      🔍 Phase 2: Smart testing with resource-specific actions...")
+        
+        # ✅ OPTIMIZATION: Chỉ test với discovered_bases thực sự tồn tại
+        if len(discovered_bases) == 0:
+            print(f"      ⚠️  No valid base APIs found, skipping deep discovery")
+            return api_endpoints
+        
+        for base_api in discovered_bases:
+            # ✅ Xác định resource type từ base path (SMART matching)
+            base_lower = base_api.lower()
+            relevant_actions = []
+            
+            # ✅ BLACKLIST: Skip endpoints không có SSRF potential
+            skip_patterns = ['user', 'auth', 'login', 'customer', 'order']
+            should_skip = any(pattern in base_lower for pattern in skip_patterns)
+            
+            if should_skip:
+                print(f"      ⏭️  Skipping {base_api} (no SSRF potential)")
+                continue
+            
+            # Find matching resource type (match most specific first)
+            # Sort by length DESC để match '/api/products' trước '/api'
+            sorted_resources = sorted(resource_actions_map.items(), key=lambda x: len(x[0]), reverse=True)
+            
+            for resource_type, actions in sorted_resources:
+                if resource_type in base_lower:
+                    relevant_actions = actions
+                    break
+            
+            # Skip nếu không tìm thấy relevant actions
+            if not relevant_actions:
+                print(f"      ⏭️  Skipping {base_api} (no matching actions)")
+                continue
+            
+            print(f"      🎯 Testing {base_api} with {len(relevant_actions)} relevant actions...")
+            tests_count = 0
+            max_tests_per_base = 6  # Limit per base
+            
+            for test_id in test_ids:
+                if tests_count >= max_tests_per_base:
+                    break
+                    
+                for action in relevant_actions:
+                    if tests_count >= max_tests_per_base:
+                        break
+                    
+                    # Test pattern: /api/products/5/check_price/
+                    deep_endpoint = f"{base_api}/{test_id}/{action}/"
+                    
+                    try:
+                        # Test POST với JSON FIRST (more common for SSRF)
+                        post_resp = self.session.post(
+                            deep_endpoint,
+                            json={"test": "probe"},
+                            headers={'Content-Type': 'application/json'},
+                            timeout=2,
+                            allow_redirects=False
+                        )
+                        
+                        # ✅ FIXED: BỎ 405! Chỉ accept valid responses
+                        if post_resp.status_code in [200, 201, 400, 401, 403, 422, 500]:
+                            api_endpoints.add(deep_endpoint)
+                            print(f"      ✓ {deep_endpoint.replace(base_root, '')} [POST:{post_resp.status_code}]")
+                            tests_count += 1
+                        
+                        # Test GET nếu POST không work
+                        elif post_resp.status_code == 405:
+                            get_resp = self.session.get(deep_endpoint, timeout=2, allow_redirects=False)
+                            if get_resp.status_code in [200, 201, 400, 401, 403, 422, 500]:
+                                api_endpoints.add(deep_endpoint)
+                                print(f"      ✓ {deep_endpoint.replace(base_root, '')} [GET:{get_resp.status_code}]")
+                                tests_count += 1
+                    
+                    except:
+                        pass
+        
         return api_endpoints
     
-    def _discover_ssrf_endpoints(self, base_api: str, ssrf_paths: List[str], api_endpoints: Set[str]):
-        """
-        Discover SSRF-prone endpoints like /api/products/1/check_price/
-        """
-        # Try with common ID patterns
-        id_patterns = ['1', '2', '5', '{id}']
-        
-        for id_val in id_patterns:
-            for ssrf_path in ssrf_paths:
-                # Pattern: /api/products/5/check_price/
-                test_endpoint = f"{base_api}/{id_val}{ssrf_path}/"
-                
-                try:
-                    # Test both GET and POST
-                    get_response = self.session.get(test_endpoint, timeout=3, allow_redirects=False)
-                    if get_response.status_code in [200, 400, 401, 403, 405, 422, 500]:
-                        api_endpoints.add(test_endpoint)
-                        print(f"      ✓ SSRF endpoint found: {test_endpoint} [GET:{get_response.status_code}]")
-                    
-                    # Test POST với JSON
-                    post_response = self.session.post(
-                        test_endpoint, 
-                        json={"test": "value"},
-                        timeout=3, 
-                        allow_redirects=False
-                    )
-                    if post_response.status_code in [200, 400, 401, 403, 405, 422, 500]:
-                        api_endpoints.add(test_endpoint)
-                        print(f"      ✓ SSRF endpoint found: {test_endpoint} [POST:{post_response.status_code}]")
-                        
-                except:
-                    pass
-    
+
     def _parse_all_forms(self) -> List[Dict]:
         """Parse tất cả HTML forms"""
         forms = []
@@ -309,30 +382,60 @@ class AutoDiscovery:
     
     def _identify_testable_endpoints(self, results: Dict) -> List[Dict]:
         """
-        Identify endpoints có khả năng vulnerable với SSRF
+        ✅ ENHANCED: Identify SSRF-vulnerable endpoints với better parameter detection
         
         Criteria:
         1. Có parameters với tên suspicious
         2. Accepts URL-like input
-        3. API endpoints
+        3. API endpoints (especially with actions like check_price, compare, review)
         4. Forms với URL inputs
         """
         testable = []
         
-        # Suspicious parameter names
+        # ✅ EXPANDED: More SSRF parameter names từ real-world labs
         url_params = [
+            # Standard URL params
             'url', 'uri', 'path', 'link', 'href', 'src',
+            
+            # Callback/Webhook
             'callback', 'callback_url', 'callbackUrl',
             'webhook', 'webhook_url', 'webhookUrl',
+            
+            # Redirect
             'redirect', 'redirect_url', 'redirectUrl',
             'return_url', 'returnUrl', 'return_to',
+            
+            # Target/Destination
             'target', 'target_url', 'targetUrl',
-            'dest', 'destination',
-            'fetch', 'load', 'import', 'download',
-            'proxy', 'host', 'endpoint', 'service',
-            'image', 'img', 'picture', 'avatar',
-            'file', 'document', 'resource', 'source',
-            'next', 'continue', 'goto'
+            'dest', 'destination', 'destination_url',
+            
+            # Fetch/Load/Import
+            'fetch', 'fetch_url', 'load', 'load_url',
+            'import', 'import_url', 'download', 'download_url',
+            
+            # Proxy/Forward
+            'proxy', 'proxy_url', 'host', 'endpoint', 'service',
+            'forward', 'forward_url',
+            
+            # Media
+            'image', 'image_url', 'img', 'img_url',
+            'picture', 'picture_url', 'avatar', 'avatar_url',
+            
+            # File/Resource
+            'file', 'file_url', 'document', 'document_url',
+            'resource', 'resource_url', 'source', 'source_url',
+            
+            # ✅ Lab-specific params (từ PortSwigger, HackTheBox, etc.)
+            'compare_url', 'compareUrl',  # Price comparison
+            'review_url', 'reviewUrl',     # Product review
+            'external_url', 'externalUrl', # External resource
+            'api_url', 'apiUrl',           # API call
+            'check_url', 'checkUrl',       # URL check
+            'validate_url', 'validateUrl', # URL validation
+            'verify_url', 'verifyUrl',     # URL verification
+            
+            # Navigation
+            'next', 'continue', 'goto', 'navigate'
         ]
         
         # Check parameters from URLs
@@ -348,38 +451,48 @@ class AutoDiscovery:
                         'reason': f'Parameter name "{param}" suggests URL handling'
                     })
         
-        # Check API endpoints (ADD SYNTHETIC PARAMETERS FOR GET)
-        common_ssrf_params = ['url', 'callback', 'webhook', 'redirect', 'target', 'src', 'endpoint']
+        # ✅ SMART API endpoint testing - ONLY for valid discovered endpoints
+        print(f"      🔍 Analyzing {len(results['api_endpoints'])} API endpoints...")
         
         for api_endpoint in results['api_endpoints']:
-            # Test GET với query parameters
-            for param in common_ssrf_params:
-                testable.append({
-                    'type': 'api_endpoint_synthetic',
-                    'endpoint': api_endpoint,
-                    'parameter': param,
-                    'method': 'GET',
-                    'confidence': 0.6,
-                    'reason': f'API endpoint with synthetic parameter "{param}"'
-                })
-            
-            # Test POST với JSON body cho SSRF-prone endpoints
             endpoint_path = api_endpoint.lower()
-            ssrf_indicators = [
-                'check_price', 'price_check', 'compare_price', 'compare_url',
-                'fetch', 'proxy', 'callback', 'webhook', 'import', 'export',
-                'validate', 'verify', 'check', 'thumbnail', 'preview', 'image'
+            
+            # ✅ Identify SSRF action trong path
+            ssrf_actions_in_path = [
+                'check_price', 'price_check', 'compare_price', 'compare',
+                'fetch', 'proxy', 'callback', 'webhook', 
+                'import', 'export', 'download', 'upload',
+                'validate', 'verify', 'check', 'review',
+                'thumbnail', 'preview', 'image'
             ]
             
-            if any(indicator in endpoint_path for indicator in ssrf_indicators):
-                for param in ['url', 'compare_url', 'callback_url', 'webhook_url', 'target_url', 'src_url']:
+            has_ssrf_action = any(action in endpoint_path for action in ssrf_actions_in_path)
+            
+            # ✅ ONLY test endpoints với SSRF actions (bỏ generic endpoints)
+            if has_ssrf_action:
+                # ✅ OPTIMIZED: Chỉ test 3 parameters PHỔ BIẾN nhất
+                # Giảm từ 6 → 3 parameters = giảm 50% tests
+                json_params = []
+                
+                # Chọn parameters dựa trên action type
+                if 'callback' in endpoint_path or 'webhook' in endpoint_path:
+                    json_params = ['callback_url', 'webhook_url', 'url']
+                elif 'fetch' in endpoint_path or 'proxy' in endpoint_path:
+                    json_params = ['url', 'callback_url', 'target_url']
+                elif 'compare' in endpoint_path or 'check_price' in endpoint_path:
+                    json_params = ['compare_url', 'url', 'target_url']
+                else:
+                    # Default: most common params
+                    json_params = ['url', 'callback_url', 'target_url']
+                
+                for param in json_params:
                     testable.append({
-                        'type': 'api_endpoint_json_post',
+                        'type': 'api_json_post',
                         'endpoint': api_endpoint,
                         'parameter': param,
                         'method': 'POST',
-                        'confidence': 0.8,
-                        'reason': f'SSRF-prone endpoint "{api_endpoint}" with JSON parameter "{param}"'
+                        'confidence': 0.9,  # HIGH confidence
+                        'reason': f'SSRF action endpoint with POST JSON param "{param}"'
                     })
         
         # Check forms
@@ -504,142 +617,347 @@ class AutoDiscovery:
             'test_results': test_results
         }
 
-    def _test_ssrf_vulnerabilities(self, testable_endpoints: List[Dict]) -> List[Dict]:
+    def _test_ssrf_vulnerabilities(self, testable_endpoints: List[Dict], callback_url: str = None, callback_server=None, max_workers: int = 5) -> List[Dict]:
         """
-        🔥 SSRF VULNERABILITY TESTING
-        Test each endpoint với callback server để confirm SSRF 100%
+        ✅ PARALLEL SSRF TESTING với ThreadPoolExecutor
+        Test multiple endpoints đồng thời để tăng tốc độ
+        
+        Args:
+            testable_endpoints: List of endpoints to test
+            callback_server: Existing callback server (optional, will create new if None)
+            max_workers: Number of parallel threads (default: 5)
         """
         vulnerabilities = []
         
         if not testable_endpoints:
             return vulnerabilities
         
-        # Start callback server
-        from ..detection.external_callback import CallbackServer
+        # ✅ SMART: Sử dụng public callback URL nếu có, fallback local server
+        from ..detection.external_callback import CallbackServer, MockCallbackServer
+        
+        should_stop_server = False
         
         try:
-            # Khởi tạo callback server
-            callback_server = CallbackServer(port=9999)  # Avoid conflict với MCP Burp (8888)
-            callback_url = callback_server.start()
-            print(f"      📡 Callback server started: {callback_url}")
+            # PRIORITY 1: Dùng public callback URL nếu được cung cấp (NGROK - HIGHEST PRIORITY!)
+            if callback_url:
+                print(f"      📡 Using PUBLIC callback URL: {callback_url}")
+                # Tạo mock callback server để giữ interface nhất quán
+                # ⚠️ KHÔNG OVERRIDE callback_url!
+                if callback_server is None:
+                    callback_server = MockCallbackServer(callback_url)
+                
+            # PRIORITY 2: Dùng existing callback server (CHỈ nếu KHÔNG có public URL!)
+            elif callback_server is not None:
+                callback_url = callback_server.get_callback_url()
+                print(f"      📡 Using existing callback server: {callback_url}")
             
-            # Test từng endpoint
-            for i, target in enumerate(testable_endpoints[:10], 1):  # Limit 10 để không spam
-                endpoint = target['endpoint']
-                parameter = target['parameter']
-                confidence = target['confidence']
-                
-                print(f"      🎯 [{i:2d}] Testing {endpoint} (param: {parameter})")
-                
-                # Generate unique callback URL
-                test_id = f"ssrf_{i}_{int(time.time())}"
-                test_callback_url = f"{callback_url}/{test_id}"
-                
-                vulnerability = self._test_single_ssrf(endpoint, parameter, test_callback_url, test_id, callback_server, target.get('method', 'GET'), target.get('type', 'unknown'))
-                
-                if vulnerability:
-                    vulnerability['confidence'] = confidence
-                    vulnerability['original_confidence'] = confidence
-                    vulnerabilities.append(vulnerability)
-                    print(f"         🔥 SSRF CONFIRMED! {endpoint}")
-                else:
-                    print(f"         ❌ No SSRF detected")
-                
-                # Rate limiting
-                time.sleep(0.5)
+            # PRIORITY 3: Tạo LOCAL callback server mới (fallback)
+            else:
+                callback_server = CallbackServer(port=8888)
+                callback_url = callback_server.start()
+                should_stop_server = True
+                print(f"      📡 New LOCAL callback server started: {callback_url}")
+                print(f"         ⚠️  NOTE: Target có thể KHÔNG truy cập được local server!")
+                print(f"         💡 Tip: Dùng ngrok/serveo hoặc public callback URL")
             
-            # Stop callback server
-            callback_server.stop()
-            print(f"      📡 Callback server stopped")
+            # ✅ AGGRESSIVE FILTERING
+            print(f"      🔍 Filtering {len(testable_endpoints)} candidates...")
+            
+            valid_targets = []
+            for t in testable_endpoints:
+                endpoint = t['endpoint']
+                
+                # Skip placeholders
+                if any(x in endpoint for x in ['{id}', '<id>', '{param}', '{code}']):
+                    continue
+                
+                # ✅ Skip fake/synthetic endpoints (internal, service/services, admin/api, graphql)
+                skip_patterns = ['/internal/', '/service/', '/services/', '/admin/api/', '/graphql/']
+                if any(pattern in endpoint.lower() for pattern in skip_patterns):
+                    continue
+                
+                # ✅ Only keep endpoints từ discovered_endpoints (thực sự tồn tại)
+                # hoặc confidence cao (0.9+)
+                if t['confidence'] >= 0.7:  # Only HIGH confidence
+                    valid_targets.append(t)
+            
+            # Sort by confidence - test HIGH confidence first
+            sorted_targets = sorted(valid_targets, key=lambda x: x['confidence'], reverse=True)
+            
+            # ✅ LIMIT: Chỉ test top 100 endpoints
+            sorted_targets = sorted_targets[:100]
+            total_to_test = len(sorted_targets)
+            
+            print(f"      📊 Filtered to {total_to_test} high-confidence endpoints")
+            print(f"      🎯 Testing with {max_workers} parallel workers")
+            
+            # ✅ PARALLEL TESTING với ThreadPoolExecutor
+            tested_count = 0
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # Submit all test tasks
+                future_to_target = {}
+                for i, target in enumerate(sorted_targets, 1):
+                    test_id = f"ssrf_{i}_{int(time.time()*1000)}"
+                    test_callback_url = f"{callback_url}/{test_id}"
+                    
+                    future = executor.submit(
+                        self._test_single_ssrf_wrapper,
+                        target, test_callback_url, test_id, callback_server, i, total_to_test
+                    )
+                    future_to_target[future] = target
+                
+                # Collect results as they complete
+                for future in as_completed(future_to_target):
+                    target = future_to_target[future]
+                    try:
+                        result = future.result()
+                        tested_count += 1
+                        
+                        if result:
+                            result['confidence'] = target['confidence']
+                            vulnerabilities.append(result)
+                            print(f"         ✅ SSRF CONFIRMED: {target['endpoint'][:60]}")
+                    
+                    except KeyboardInterrupt:
+                        print(f"\n      ⚠️  Testing interrupted by user")
+                        executor.shutdown(wait=False, cancel_futures=True)
+                        break
+                    except Exception as e:
+                        print(f"         ⚠️  Error testing {target['endpoint'][:50]}: {str(e)[:50]}")
+            
+            print(f"\n      ✅ Testing complete: {tested_count}/{total_to_test} endpoints tested")
+            
+            # Stop callback server nếu là server tạo mới
+            if should_stop_server:
+                callback_server.stop()
+                print(f"      📡 Callback server stopped")
+            else:
+                print(f"      📡 Callback server kept alive (managed externally)")
             
         except Exception as e:
             print(f"         ❌ Error in SSRF testing: {e}")
+            if should_stop_server and callback_server:
+                try:
+                    callback_server.stop()
+                except:
+                    pass
         
         return vulnerabilities
+    
+    def _test_single_ssrf_wrapper(self, target: Dict, callback_url: str, test_id: str, callback_server, index: int, total: int) -> Optional[Dict]:
+        """Wrapper cho parallel testing"""
+        endpoint = target['endpoint']
+        parameter = target['parameter']
+        method = target.get('method', 'GET')
+        test_type = target.get('type', 'unknown')
+        
+        display_url = endpoint if len(endpoint) <= 60 else endpoint[:57] + '...'
+        print(f"      🎯 [{index:2d}/{total}] {display_url} ({parameter}) [{method}]")
+        
+        return self._test_single_ssrf(endpoint, parameter, callback_url, test_id, callback_server, method, test_type)
 
     def _test_single_ssrf(self, endpoint: str, parameter: str, callback_url: str, test_id: str, callback_server, method: str = 'GET', test_type: str = 'unknown') -> Optional[Dict]:
         """
-        Test single endpoint for SSRF vulnerability
-        Supports both GET (query params) and POST (JSON body)
+        ✅ ENHANCED: Test single endpoint với support cho POST + JSON
         """
         try:
             # Clear any existing callbacks
             callback_server.clear_callbacks()
             
             start_time = time.time()
+            response = None
+            payload_info = ""
             
-            # Choose request method based on test type
+            # ✅ PRIORITY 1: POST + JSON (for api_json_post type)
             if method.upper() == 'POST' and 'json' in test_type.lower():
-                # POST with JSON body
                 json_payload = {parameter: callback_url}
-                response = self.session.post(
-                    endpoint, 
-                    json=json_payload, 
-                    timeout=10, 
-                    allow_redirects=True
-                )
-                payload_info = f"POST JSON: {json_payload}"
-            else:
-                # GET with query parameters  
-                if '?' in endpoint:
-                    test_url = f"{endpoint}&{parameter}={callback_url}"
-                else:
-                    test_url = f"{endpoint}?{parameter}={callback_url}"
                 
-                response = self.session.get(test_url, timeout=10, allow_redirects=True)
-                payload_info = f"GET: {test_url}"
+                try:
+                    response = self.session.post(
+                        endpoint, 
+                        json=json_payload,
+                        headers={'Content-Type': 'application/json'},
+                        timeout=5,
+                        allow_redirects=False,
+                        verify=False
+                    )
+                    payload_info = f"POST JSON: {json_payload}"
+                    print(f" [POST/JSON {response.status_code}]", end='', flush=True)
+                    
+                    # ✅ AUTO-FALLBACK: Nếu 405 → thử GET ngay
+                    if response.status_code == 405:
+                        print(f" → Trying GET...", end='', flush=True)
+                        if '?' in endpoint:
+                            test_url = f"{endpoint}&{parameter}={quote(callback_url)}"
+                        else:
+                            test_url = f"{endpoint}?{parameter}={quote(callback_url)}"
+                        
+                        response = self.session.get(
+                            test_url, 
+                            timeout=5,
+                            allow_redirects=False,
+                            verify=False
+                        )
+                        payload_info = f"GET (fallback): {test_url}"
+                        print(f" [GET {response.status_code}]", end='', flush=True)
+                
+                except Exception as post_error:
+                    print(f" [POST failed: {str(post_error)[:30]}]", end='', flush=True)
+                    return None
+            
+            # ✅ PRIORITY 2: POST + Form Data (fallback)
+            elif method.upper() == 'POST':
+                form_data = {parameter: callback_url}
+                
+                try:
+                    response = self.session.post(
+                        endpoint,
+                        data=form_data,
+                        timeout=5,
+                        allow_redirects=False,
+                        verify=False
+                    )
+                    payload_info = f"POST Form: {form_data}"
+                    print(f" [POST/Form {response.status_code}]", end='', flush=True)
+                    
+                    # ✅ AUTO-FALLBACK: Nếu 405 → thử GET ngay
+                    if response.status_code == 405:
+                        print(f" → Trying GET...", end='', flush=True)
+                        if '?' in endpoint:
+                            test_url = f"{endpoint}&{parameter}={quote(callback_url)}"
+                        else:
+                            test_url = f"{endpoint}?{parameter}={quote(callback_url)}"
+                        
+                        response = self.session.get(
+                            test_url, 
+                            timeout=5,
+                            allow_redirects=False,
+                            verify=False
+                        )
+                        payload_info = f"GET (fallback): {test_url}"
+                        print(f" [GET {response.status_code}]", end='', flush=True)
+                
+                except Exception as post_error:
+                    print(f" [POST failed: {str(post_error)[:30]}]", end='', flush=True)
+                    return None
+            
+            # ✅ PRIORITY 3: GET with query parameters
+            else:
+                if '?' in endpoint:
+                    test_url = f"{endpoint}&{parameter}={quote(callback_url)}"
+                else:
+                    test_url = f"{endpoint}?{parameter}={quote(callback_url)}"
+                
+                try:
+                    response = self.session.get(
+                        test_url, 
+                        timeout=5,
+                        allow_redirects=False,
+                        verify=False
+                    )
+                    payload_info = f"GET: {test_url}"
+                    print(f" [GET {response.status_code}]", end='', flush=True)
+                
+                except Exception as get_error:
+                    print(f" [GET failed: {str(get_error)[:30]}]", end='', flush=True)
+                    return None
+            
+            if response is None:
+                return None
+            
+            # ✅ SKIP: Nếu vẫn nhận 405 sau fallback → bỏ qua luôn
+            if response.status_code == 405:
+                print(f" ❌ Method not allowed (skipped)")
+                return None
+            
+            # ✅ SKIP: Nếu 404 → endpoint không tồn tại
+            if response.status_code == 404:
+                print(f" ❌ Not found (skipped)")
+                return None
             
             request_time = time.time()
+
+            # ✅ Wait for callback (single check with configurable timeout)
+            # Use callback_server.check_callback_received() to avoid busy polling loops
+            callback_wait = min(2, max(0.5, getattr(self, 'timeout', 2)))
+            print(f" → Waiting for callback (up to {callback_wait}s)...", end='', flush=True)
+
+            try:
+                if callback_server and callback_server.check_callback_received(test_id, timeout=callback_wait):
+                    # Retrieve latest callbacks to get details
+                    callbacks = callback_server.get_callbacks(timeout=0.5)
+                    found_cb = None
+                    for cb in callbacks:
+                        if test_id in cb.get('path', ''):
+                            found_cb = cb
+                            break
+
+                    print(f" ✅ CALLBACK RECEIVED!")
+                    return {
+                        'endpoint': endpoint,
+                        'parameter': parameter,
+                        'method': method,
+                        'test_type': test_type,
+                        'payload': payload_info,
+                        'callback_url': callback_url,
+                        'callback_received': found_cb,
+                        'response_status': response.status_code,
+                        'response_time': request_time - start_time,
+                        'callback_time': found_cb.get('timestamp') if found_cb else None,
+                        'severity': 'HIGH',
+                        'type': 'SSRF',
+                        'confirmed': True
+                    }
+                else:
+                    print(f" ❌ No callback")
+                    return None
+            except Exception:
+                print(f" ❌ Callback check error")
+                return None
             
-            # Wait for callback (up to 5 seconds)
-            max_wait = 5
-            wait_time = 0
-            
-            while wait_time < max_wait:
-                callbacks = callback_server.get_callbacks()
-                for callback in callbacks:
-                    if test_id in callback.get('path', ''):
-                        # SSRF CONFIRMED!
-                        return {
-                            'endpoint': endpoint,
-                            'parameter': parameter,
-                            'method': method,
-                            'payload': payload_info,
-                            'callback_url': callback_url,
-                            'callback_received': callback,
-                            'response_status': response.status_code,
-                            'response_time': request_time - start_time,
-                            'callback_time': callback.get('timestamp'),
-                            'severity': 'HIGH',
-                            'type': 'SSRF',
-                            'confirmed': True
-                        }
-                
-                time.sleep(0.2)
-                wait_time += 0.2
-            
-            # No callback received
+        except requests.exceptions.Timeout:
+            print(f" ⏱️ Timeout")
             return None
-            
+        except requests.exceptions.ConnectionError:
+            print(f" 🔌 Connection failed")
+            return None
+        except requests.exceptions.TooManyRedirects:
+            print(f" 🔄 Too many redirects")
+            return None
         except Exception as e:
-            print(f"         ⚠️  Error testing {endpoint}: {e}")
+            print(f" ⚠️ Error: {str(e)[:50]}")
             return None
 
 
 # Helper function cho easy usage
-def auto_discover_ssrf(domain: str, max_depth: int = 2) -> Dict:
+def auto_discover_ssrf(domain: str, max_depth: int = 2, auth_token: str = None, auth_header: str = 'Authorization', callback_url: str = None, callback_server = None) -> Dict:
     """
-    🎯 ONE-LINE DISCOVERY: Chỉ cần domain!
+    ✅ ONE-LINE DISCOVERY với authentication support
     
     Example:
+        # No auth
         results = auto_discover_ssrf("https://quangtx.io.vn")
+        
+        # With Bearer token
+        results = auto_discover_ssrf(
+            "https://quangtx.io.vn",
+            auth_token="Bearer eyJhbGc..."
+        )
+        
+        # With custom header + public callback
+        results = auto_discover_ssrf(
+            "https://quangtx.io.vn",
+            auth_token="session123456",
+            auth_header="X-Auth-Token",
+            callback_url="http://abc123.oast.fun"  # Public callback domain
+        )
     """
     # Ensure domain has scheme
     if not domain.startswith('http'):
         domain = 'https://' + domain
     
-    discoverer = AutoDiscovery(domain, max_depth=max_depth)
-    return discoverer.run_full_discovery()
+    discoverer = AutoDiscovery(domain, max_depth=max_depth, auth_token=auth_token, auth_header=auth_header)
+    return discoverer.run_full_discovery(callback_url=callback_url, callback_server=callback_server)
 
 
 if __name__ == '__main__':

