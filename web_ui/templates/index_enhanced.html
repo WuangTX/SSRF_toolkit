@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SSRF Pentest Toolkit - Enhanced UI</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        /* Enhanced Tab Styles */
+        .workflow-tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #e5e7eb;
+        }
+        .workflow-tab {
+            padding: 15px 25px;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 500;
+            color: #6b7280;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s;
+        }
+        .workflow-tab:hover {
+            color: #3b82f6;
+            background: #f9fafb;
+        }
+        .workflow-tab.active {
+            color: #3b82f6;
+            border-bottom-color: #3b82f6;
+        }
+        .workflow-content {
+            display: none;
+            animation: fadeIn 0.3s;
+        }
+        .workflow-content.active {
+            display: block;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .option-group {
+            background: #f9fafb;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .option-group h3 {
+            margin-top: 0;
+            color: #1f2937;
+            font-size: 18px;
+            margin-bottom: 15px;
+        }
+        .checkbox-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 10px;
+        }
+        .alert-box {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .alert-info { background: #eff6ff; border-left: 4px solid #3b82f6; }
+        .alert-warning { background: #fffbeb; border-left: 4px solid #f59e0b; }
+        .alert-danger { background: #fef2f2; border-left: 4px solid #ef4444; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🛡️ SSRF Pentest Toolkit - Enhanced</h1>
+            <p>Microservice Security Testing Suite với Workflow Tối Ưu</p>
+            <div id="callbackServerInfo" class="alert-box alert-info">
+                <strong>🎯 Callback Server:</strong> 
+                <span id="callbackUrl">Đang khởi động...</span>
+                <a id="callbackDashboardLink" href="#" target="_blank" style="margin-left: 10px;">
+                    📊 Mở Dashboard
+                </a>
+            </div>
+        </header>
+
+        <main>
+            <!-- Workflow Tabs -->
+            <div class="workflow-tabs">
+                <button class="workflow-tab active" data-tab="recon">
+                    📡 1. Recon / Input
+                </button>
+                <button class="workflow-tab" data-tab="payload">
+                    🎯 2. Payload Strategy
+                </button>
+                <button class="workflow-tab" data-tab="scan">
+                    🔍 3. Scan & Analysis
+                </button>
+                <button class="workflow-tab" data-tab="exploit">
+                    💥 4. Exploit Module
+                </button>
+            </div>
+
+            <form id="scanForm">
+                <!-- ===== TAB 1: RECON / INPUT ===== -->
+                <div class="workflow-content active" id="reconTab">
+                    <div class="alert-box alert-info">
+                        <strong>📋 Bước 1:</strong> Chọn chế độ kiểm thử và nguồn dữ liệu đầu vào
+                    </div>
+
+                    <!-- 1. Test Mode -->
+                    <div class="option-group">
+                        <h3>🎯 1. Chế độ Kiểm Thử (Test Mode)</h3>
+                        <div class="radio-group">
+                            <label>
+                                <input type="radio" name="test_mode" value="blackbox" checked>
+                                <strong>Blackbox</strong> - Không có thông tin nội bộ (tự động discovery + fuzzing)
+                            </label>
+                            <label>
+                                <input type="radio" name="test_mode" value="graybox">
+                                <strong>Graybox</strong> - Có token/API key hoặc danh sách endpoint
+                            </label>
+                            <label>
+                                <input type="radio" name="test_mode" value="whitebox">
+                                <strong>Whitebox</strong> - Có source code/API spec (tự sinh checklist SSRF)
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- 5. Input Source -->
+                    <div class="option-group">
+                        <h3>📥 5. Nguồn Dữ Liệu (Input Source)</h3>
+                        <div class="radio-group">
+                            <label>
+                                <input type="radio" name="input_source" value="manual" checked>
+                                <strong>Manual Input</strong> - Nhập URL thủ công
+                            </label>
+                            <label>
+                                <input type="radio" name="input_source" value="api_spec">
+                                <strong>API Spec</strong> - OpenAPI/Swagger file
+                            </label>
+                            <label>
+                                <input type="radio" name="input_source" value="burp_traffic">
+                                <strong>Burp Traffic</strong> - Burp Suite export / HAR file
+                            </label>
+                            <label>
+                                <input type="radio" name="input_source" value="postman">
+                                <strong>Postman Collection</strong> - Postman JSON export
+                            </label>
+                            <label>
+                                <input type="radio" name="input_source" value="source_code">
+                                <strong>Source Code</strong> - Phân tích code để tìm endpoints
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Target URL / File Upload -->
+                    <div class="option-group">
+                        <h3>🌐 Target / File Upload</h3>
+                        <div class="form-group">
+                            <label for="targetUrl">Target URL (nếu manual/auto discovery)</label>
+                            <input type="url" id="targetUrl" name="target_url" 
+                                   placeholder="https://example.com">
+                        </div>
+                        <div class="form-group" id="fileUploadGroup" style="display: none;">
+                            <label for="inputFile">Upload File (Swagger/Burp/Postman/Source)</label>
+                            <input type="file" id="inputFile" name="input_file" 
+                                   accept=".json,.xml,.har,.yaml,.yml,.zip">
+                        </div>
+                    </div>
+
+                    <!-- 6. Service Discovery (cho Graybox) -->
+                    <div class="option-group" id="serviceDiscoveryGroup" style="display: none;">
+                        <h3>🔍 6. Service Discovery & Mapping</h3>
+                        <label>
+                            <input type="checkbox" name="service_discovery_enabled">
+                            <strong>Bật Service Discovery</strong>
+                        </label>
+                        <div class="checkbox-grid" style="margin-top: 10px;">
+                            <label><input type="checkbox" name="discovery_kubernetes"> Kubernetes API</label>
+                            <label><input type="checkbox" name="discovery_consul"> Consul</label>
+                            <label><input type="checkbox" name="discovery_docker"> Docker</label>
+                            <label><input type="checkbox" name="discovery_api_gateway"> API Gateway Logs</label>
+                        </div>
+                        <label style="margin-top: 10px;">
+                            <input type="checkbox" name="auto_dependency_graph">
+                            Tự động vẽ dependency graph (service gọi service nào)
+                        </label>
+                    </div>
+
+                    <!-- Authentication (cho Graybox) -->
+                    <div class="option-group" id="authGroup" style="display: none;">
+                        <h3>🔑 Authentication (Graybox)</h3>
+                        <div class="form-group">
+                            <label for="authToken">Auth Token / API Key</label>
+                            <input type="text" id="authToken" name="auth_token" 
+                                   placeholder="Bearer eyJhbGciOiJIUzI1...">
+                        </div>
+                        <div class="form-group">
+                            <label for="authHeader">Auth Header Name</label>
+                            <input type="text" id="authHeader" name="auth_header" 
+                                   value="Authorization" placeholder="Authorization">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ===== TAB 2: PAYLOAD STRATEGY ===== -->
+                <div class="workflow-content" id="payloadTab">
+                    <div class="alert-box alert-info">
+                        <strong>🎯 Bước 2:</strong> Chọn loại payload và độ sâu tấn công
+                    </div>
+
+                    <!-- 2. Target Type -->
+                    <div class="option-group">
+                        <h3>🎯 2. Loại Mục Tiêu (Target Type)</h3>
+                        <div class="checkbox-grid">
+                            <label><input type="checkbox" name="target_http" checked> HTTP Endpoint</label>
+                            <label><input type="checkbox" name="target_grpc"> gRPC Endpoint</label>
+                            <label><input type="checkbox" name="target_internal"> Internal Service URLs</label>
+                            <label><input type="checkbox" name="target_cloud_metadata"> Cloud Metadata (AWS/GCP/Azure)</label>
+                            <label><input type="checkbox" name="target_container"> Container Services (Docker/K8s API)</label>
+                            <label><input type="checkbox" name="target_service_mesh"> Service Mesh (Istio/Linkerd)</label>
+                        </div>
+                    </div>
+
+                    <!-- 3. Attack Depth -->
+                    <div class="option-group">
+                        <h3>⚡ 3. Mức Độ Tấn Công (Attack Depth)</h3>
+                        <div class="radio-group">
+                            <label>
+                                <input type="radio" name="attack_depth" value="quick" checked>
+                                <strong>Quick Scan</strong> - Payload cơ bản (169.254.169.254, localhost, file://)
+                            </label>
+                            <label>
+                                <input type="radio" name="attack_depth" value="deep">
+                                <strong>Deep Scan</strong> - Top 500 SSRF signatures
+                            </label>
+                            <label>
+                                <input type="radio" name="attack_depth" value="cloud">
+                                <strong>Cloud Scan</strong> - Payload đặc biệt cho cloud (IMDSv1/v2, metadata proxy)
+                            </label>
+                            <label>
+                                <input type="radio" name="attack_depth" value="container">
+                                <strong>Container Scan</strong> - 127.0.0.1:2375, :8500, Unix socket
+                            </label>
+                            <label>
+                                <input type="radio" name="attack_depth" value="side_channel">
+                                <strong>Side-Channel</strong> - DNS callback, time delay, redirect chain
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- 4. Payload Strategy -->
+                    <div class="option-group">
+                        <h3>🔧 4. Kỹ Thuật Payload</h3>
+                        <div class="checkbox-grid">
+                            <label><input type="checkbox" name="payload_url_bypass" checked> URL Bypass (DNS rebinding, shortlink, encoding)</label>
+                            <label><input type="checkbox" name="payload_protocol_smuggling"> Protocol Smuggling (gopher://, ftp://, dict://)</label>
+                            <label><input type="checkbox" name="payload_redirect"> Redirect-based SSRF</label>
+                            <label><input type="checkbox" name="payload_header_injection"> Header Injection (Host, X-Forwarded-*)</label>
+                            <label><input type="checkbox" name="payload_template_injection"> Template/SSTI → SSRF</label>
+                            <label><input type="checkbox" name="payload_blind_ssrf"> Blind SSRF (DNS Logging)</label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ===== TAB 3: SCAN & ANALYSIS ===== -->
+                <div class="workflow-content" id="scanTab">
+                    <div class="alert-box alert-info">
+                        <strong>🔍 Bước 3:</strong> Cấu hình phương thức scan và phân tích
+                    </div>
+
+                    <!-- Scan Options -->
+                    <div class="option-group">
+                        <h3>🔬 Phương Thức Scan</h3>
+                        <div class="checkbox-grid">
+                            <label><input type="checkbox" name="scan_parameters" checked> Test SSRF trong Parameters</label>
+                            <label><input type="checkbox" name="scan_headers" checked> Test SSRF trong Headers</label>
+                            <label><input type="checkbox" name="scan_templating"> Test SSRF trong Templating</label>
+                            <label><input type="checkbox" name="scan_redirect_chain"> Detect Redirect Chain</label>
+                            <label><input type="checkbox" name="scan_ip_leak"> Detect Internal IP Leak</label>
+                            <label><input type="checkbox" name="scan_dns_callback" checked> DNS Callback Detection</label>
+                        </div>
+                    </div>
+
+                    <!-- Performance Settings -->
+                    <div class="option-group">
+                        <h3>⚙️ Cấu Hình Hiệu Suất</h3>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="timeout">Timeout (giây)</label>
+                                <input type="number" id="timeout" name="timeout" value="10" min="1" max="60">
+                            </div>
+                            <div class="form-group">
+                                <label for="threads">Threads</label>
+                                <input type="number" id="threads" name="threads" value="5" min="1" max="20">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 7. Safe Mode Controls -->
+                    <div class="option-group">
+                        <h3>🛡️ 7. Kiểm Soát An Toàn (Safe Mode)</h3>
+                        <label>
+                            <input type="checkbox" name="safe_mode" checked>
+                            <strong>Safe Mode</strong> - Chỉ gửi request nhẹ, không tấn công phá hoại
+                        </label>
+                        <div style="margin-left: 25px; margin-top: 10px;">
+                            <label><input type="checkbox" name="disable_destructive" checked> Vô hiệu hóa gopher://, dict://, file:// vào Redis/Docker</label>
+                            <label>
+                                <input type="checkbox" name="throttle_requests" checked> 
+                                Giới hạn RPS: 
+                                <input type="number" name="throttle_rps" value="2" min="0.5" max="10" step="0.5" style="width: 60px;"> req/sec
+                            </label>
+                            <label><input type="checkbox" name="scope_protection" checked> Chỉ scan domain trong phạm vi (scope)</label>
+                        </div>
+                    </div>
+
+                    <!-- Allowed Domains (if scope protection) -->
+                    <div class="form-group" id="allowedDomainsGroup" style="display: none;">
+                        <label for="allowedDomains">Allowed Domains (ngăn cách bởi dấu phẩy)</label>
+                        <input type="text" id="allowedDomains" name="allowed_domains" 
+                               placeholder="example.com, api.example.com">
+                    </div>
+                </div>
+
+                <!-- ===== TAB 4: EXPLOIT MODULE ===== -->
+                <div class="workflow-content" id="exploitTab">
+                    <div class="alert-box alert-warning">
+                        <strong>⚠️ Cảnh báo:</strong> Exploit module chỉ nên bật khi bạn hiểu rõ rủi ro. 
+                        Các tính năng này có thể gây hại hệ thống nếu sử dụng sai cách.
+                    </div>
+
+                    <div class="option-group">
+                        <h3>💥 Exploit Modules (Bật khi cần)</h3>
+                        <div class="alert-box alert-danger" style="margin-bottom: 15px;">
+                            <strong>🚨 Chỉ sử dụng trong môi trường lab/test được phép!</strong>
+                        </div>
+                        
+                        <label>
+                            <input type="checkbox" name="exploit_enabled" id="exploitEnabled">
+                            <strong>Kích hoạt Exploit Module</strong>
+                        </label>
+
+                        <div id="exploitOptions" style="margin-left: 25px; margin-top: 15px; opacity: 0.5; pointer-events: none;">
+                            <label><input type="checkbox" name="exploit_docker_takeover"> Docker API Takeover</label>
+                            <label><input type="checkbox" name="exploit_redis_write"> Redis Arbitrary Write</label>
+                            <label><input type="checkbox" name="exploit_cloud_creds"> AWS/GCP Credential Steal</label>
+                            <label><input type="checkbox" name="exploit_internal_jump"> Jump to Internal Service</label>
+                            <label><input type="checkbox" name="exploit_kubernetes_api"> Kubernetes API Access</label>
+                        </div>
+                    </div>
+
+                    <div class="option-group">
+                        <h3>📝 Exploit Settings</h3>
+                        <div class="form-group">
+                            <label for="exploitTarget">Target Service (nếu biết cụ thể)</label>
+                            <input type="text" id="exploitTarget" name="exploit_target" 
+                                   placeholder="http://internal-service:6379">
+                        </div>
+                        <div class="form-group">
+                            <label for="exploitPayload">Custom Exploit Payload (tùy chọn)</label>
+                            <textarea id="exploitPayload" name="exploit_payload" rows="4" 
+                                      placeholder="Custom payload hoặc để trống để dùng payload mặc định"></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Submit Button -->
+                <div class="button-group" style="margin-top: 30px;">
+                    <button type="submit" class="btn btn-primary">
+                        🚀 Bắt Đầu Scan
+                    </button>
+                    <button type="button" class="btn btn-secondary" id="resetForm">
+                        🔄 Reset
+                    </button>
+                </div>
+            </form>
+
+            <!-- Progress Section -->
+            <section class="card" id="progressSection" style="display: none;">
+                <h2>Scan Progress</h2>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressBar" style="width: 0%"></div>
+                </div>
+                <p id="progressText">Initializing...</p>
+            </section>
+
+            <!-- Results Section -->
+            <section class="card" id="resultsSection" style="display: none;">
+                <h2>Results</h2>
+                <div id="resultsContent"></div>
+            </section>
+        </main>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script>
+        // Enhanced UI Logic
+        document.addEventListener('DOMContentLoaded', function() {
+            // Tab switching
+            const workflowTabs = document.querySelectorAll('.workflow-tab');
+            const workflowContents = document.querySelectorAll('.workflow-content');
+            
+            workflowTabs.forEach(tab => {
+                tab.addEventListener('click', function() {
+                    const targetTab = this.dataset.tab;
+                    
+                    workflowTabs.forEach(t => t.classList.remove('active'));
+                    workflowContents.forEach(c => c.classList.remove('active'));
+                    
+                    this.classList.add('active');
+                    document.getElementById(targetTab + 'Tab').classList.add('active');
+                });
+            });
+
+            // Show/hide based on test mode
+            const testModeInputs = document.querySelectorAll('input[name="test_mode"]');
+            testModeInputs.forEach(input => {
+                input.addEventListener('change', function() {
+                    const isGraybox = this.value === 'graybox';
+                    document.getElementById('serviceDiscoveryGroup').style.display = isGraybox ? 'block' : 'none';
+                    document.getElementById('authGroup').style.display = isGraybox ? 'block' : 'none';
+                });
+            });
+
+            // Show/hide file upload based on input source
+            const inputSourceInputs = document.querySelectorAll('input[name="input_source"]');
+            inputSourceInputs.forEach(input => {
+                input.addEventListener('change', function() {
+                    const needsFile = !['manual'].includes(this.value);
+                    document.getElementById('fileUploadGroup').style.display = needsFile ? 'block' : 'none';
+                });
+            });
+
+            // Enable/disable exploit options
+            const exploitEnabledCheckbox = document.getElementById('exploitEnabled');
+            const exploitOptions = document.getElementById('exploitOptions');
+            exploitEnabledCheckbox.addEventListener('change', function() {
+                if (this.checked) {
+                    exploitOptions.style.opacity = '1';
+                    exploitOptions.style.pointerEvents = 'auto';
+                } else {
+                    exploitOptions.style.opacity = '0.5';
+                    exploitOptions.style.pointerEvents = 'none';
+                    exploitOptions.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
+                }
+            });
+
+            // Show/hide allowed domains based on scope protection
+            const scopeProtectionCheckbox = document.querySelector('input[name="scope_protection"]');
+            scopeProtectionCheckbox.addEventListener('change', function() {
+                document.getElementById('allowedDomainsGroup').style.display = this.checked ? 'block' : 'none';
+            });
+
+            // Reset form
+            document.getElementById('resetForm').addEventListener('click', function() {
+                document.getElementById('scanForm').reset();
+                workflowTabs[0].click(); // Back to first tab
+            });
+
+            // Form submission
+            document.getElementById('scanForm').addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                // Collect all form data
+                const formData = new FormData(this);
+                
+                // Show progress section
+                document.getElementById('progressSection').style.display = 'block';
+                document.getElementById('resultsSection').style.display = 'none';
+                
+                // Submit to backend (integrate with existing scan logic)
+                fetch('/api/scan', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Scan started:', data);
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                });
+            });
+        });
+    </script>
+</body>
+</html>

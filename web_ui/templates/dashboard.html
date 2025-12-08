@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SSRF Toolkit - Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .dashboard-container {
+            max-width: 1200px;
+            margin: 40px auto;
+            padding: 20px;
+        }
+        
+        .hero-section {
+            text-align: center;
+            padding: 60px 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 15px;
+            margin-bottom: 50px;
+        }
+        
+        .hero-section h1 {
+            font-size: 3em;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .hero-section p {
+            font-size: 1.3em;
+            opacity: 0.95;
+        }
+        
+        .workflow-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 30px;
+            margin-bottom: 40px;
+        }
+        
+        .workflow-card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+            padding: 30px;
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+            cursor: pointer;
+        }
+        
+        .workflow-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+            border-color: #667eea;
+        }
+        
+        .workflow-card.blackbox {
+            border-top: 4px solid #e74c3c;
+        }
+        
+        .workflow-card.graybox {
+            border-top: 4px solid #f39c12;
+        }
+        
+        .workflow-card.whitebox {
+            border-top: 4px solid #27ae60;
+        }
+        
+        .workflow-icon {
+            font-size: 3em;
+            margin-bottom: 20px;
+        }
+        
+        .workflow-card h2 {
+            margin-bottom: 15px;
+            font-size: 1.8em;
+        }
+        
+        .workflow-card .description {
+            color: #666;
+            line-height: 1.6;
+            margin-bottom: 20px;
+        }
+        
+        .workflow-card .features {
+            list-style: none;
+            padding: 0;
+            margin-bottom: 25px;
+        }
+        
+        .workflow-card .features li {
+            padding: 8px 0;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .workflow-card .features li:last-child {
+            border-bottom: none;
+        }
+        
+        .workflow-card .features li::before {
+            content: "✓ ";
+            color: #27ae60;
+            font-weight: bold;
+            margin-right: 8px;
+        }
+        
+        .workflow-card .btn-start {
+            display: inline-block;
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-align: center;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+        
+        .workflow-card.blackbox .btn-start {
+            background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+        }
+        
+        .workflow-card.graybox .btn-start {
+            background: linear-gradient(135deg, #f39c12 0%, #d68910 100%);
+        }
+        
+        .workflow-card.whitebox .btn-start {
+            background: linear-gradient(135deg, #27ae60 0%, #229954 100%);
+        }
+        
+        .workflow-card .btn-start:hover {
+            transform: scale(1.05);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+        
+        .quick-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-top: 40px;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        
+        .stat-card .stat-number {
+            font-size: 2.5em;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        
+        .stat-card .stat-label {
+            color: #666;
+            font-size: 1em;
+        }
+        
+        .info-section {
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+            margin-top: 40px;
+        }
+        
+        .info-section h3 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.8em;
+        }
+        
+        .comparison-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        
+        .comparison-table th,
+        .comparison-table td {
+            padding: 15px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .comparison-table th {
+            background: #f8f9fa;
+            font-weight: bold;
+            color: #333;
+        }
+        
+        .comparison-table tr:hover {
+            background: #f8f9fa;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: bold;
+        }
+        
+        .badge.high {
+            background: #e74c3c;
+            color: white;
+        }
+        
+        .badge.medium {
+            background: #f39c12;
+            color: white;
+        }
+        
+        .badge.low {
+            background: #27ae60;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard-container">
+        <!-- Hero Section -->
+        <div class="hero-section">
+            <h1>🎯 SSRF Toolkit for Microservices</h1>
+            <p>Công cụ phát hiện và khai thác SSRF toàn diện cho kiến trúc microservices</p>
+        </div>
+        
+        <!-- Workflow Cards -->
+        <div class="workflow-cards">
+            <!-- Blackbox Card -->
+            <div class="workflow-card blackbox" onclick="window.location.href='/blackbox'">
+                <div class="workflow-icon">🔴</div>
+                <h2>Blackbox Testing</h2>
+                <div class="description">
+                    Kiểm thử không cần thông tin nội bộ. Tự động discovery và fuzzing với callback detection.
+                </div>
+                <ul class="features">
+                    <li>Auto Endpoint Discovery</li>
+                    <li>JavaScript Analysis</li>
+                    <li>Callback Server Detection</li>
+                    <li>Cloud Metadata Testing</li>
+                    <li>Protocol Smuggling</li>
+                    <li>Blind SSRF Detection</li>
+                </ul>
+                <a href="/blackbox" class="btn-start">Bắt đầu Blackbox Scan →</a>
+            </div>
+            
+            <!-- Graybox Card -->
+            <div class="workflow-card graybox" onclick="window.location.href='/graybox'">
+                <div class="workflow-icon">🟡</div>
+                <h2>Graybox Testing</h2>
+                <div class="description">
+                    Có API token hoặc endpoint list. Tích hợp K8s/Consul/Docker discovery để tăng độ chính xác.
+                </div>
+                <ul class="features">
+                    <li>Service Discovery (K8s/Consul/Docker)</li>
+                    <li>Authenticated Testing</li>
+                    <li>API Gateway Integration</li>
+                    <li>Internal Service Mapping</li>
+                    <li>Dependency Graph</li>
+                    <li>Container Network Testing</li>
+                </ul>
+                <a href="/graybox" class="btn-start">Bắt đầu Graybox Scan →</a>
+            </div>
+            
+            <!-- Whitebox Card -->
+            <div class="workflow-card whitebox" onclick="window.location.href='/whitebox'">
+                <div class="workflow-icon">🟢</div>
+                <h2>Whitebox Testing</h2>
+                <div class="description">
+                    Có source code hoặc API spec. Tự động sinh SSRF checklist từ code analysis.
+                </div>
+                <ul class="features">
+                    <li>Source Code Analysis</li>
+                    <li>API Spec Parsing (Swagger/OpenAPI)</li>
+                    <li>HTTP Client Detection</li>
+                    <li>URL Parameter Tracking</li>
+                    <li>Auto SSRF Checklist</li>
+                    <li>SAST Integration</li>
+                </ul>
+                <a href="/whitebox" class="btn-start">Bắt đầu Whitebox Scan →</a>
+            </div>
+        </div>
+        
+        <!-- Quick Stats -->
+        <div class="quick-stats">
+            <div class="stat-card">
+                <div class="stat-number">500+</div>
+                <div class="stat-label">SSRF Payloads</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">12</div>
+                <div class="stat-label">Detection Methods</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">6</div>
+                <div class="stat-label">Input Sources</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">3</div>
+                <div class="stat-label">Service Discovery</div>
+            </div>
+        </div>
+        
+        <!-- Info Section -->
+        <div class="info-section">
+            <h3>📊 So sánh Test Modes</h3>
+            <table class="comparison-table">
+                <thead>
+                    <tr>
+                        <th>Tính năng</th>
+                        <th>Blackbox</th>
+                        <th>Graybox</th>
+                        <th>Whitebox</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>Yêu cầu đầu vào</strong></td>
+                        <td>Chỉ cần URL</td>
+                        <td>URL + Auth Token</td>
+                        <td>Source Code / API Spec</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Độ chính xác</strong></td>
+                        <td><span class="badge medium">Medium</span></td>
+                        <td><span class="badge high">High</span></td>
+                        <td><span class="badge high">Very High</span></td>
+                    </tr>
+                    <tr>
+                        <td><strong>Thời gian scan</strong></td>
+                        <td>5-30 phút</td>
+                        <td>10-60 phút</td>
+                        <td>2-15 phút</td>
+                    </tr>
+                    <tr>
+                        <td><strong>False Positive</strong></td>
+                        <td><span class="badge medium">Medium</span></td>
+                        <td><span class="badge low">Low</span></td>
+                        <td><span class="badge low">Very Low</span></td>
+                    </tr>
+                    <tr>
+                        <td><strong>Coverage</strong></td>
+                        <td>Discovery-based</td>
+                        <td>Service-wide</td>
+                        <td>Full Code Coverage</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Phù hợp cho</strong></td>
+                        <td>External pentest</td>
+                        <td>Internal security audit</td>
+                        <td>Development phase</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        
+        <!-- Additional Info -->
+        <div class="info-section" style="margin-top: 30px;">
+            <h3>💡 Hướng dẫn sử dụng</h3>
+            <div style="line-height: 1.8; color: #555;">
+                <p><strong>1. Chọn Test Mode phù hợp:</strong></p>
+                <ul style="margin-left: 20px; margin-bottom: 20px;">
+                    <li><strong>Blackbox</strong>: Khi bạn chỉ có URL công khai, không có quyền truy cập nội bộ</li>
+                    <li><strong>Graybox</strong>: Khi bạn có auth token hoặc có quyền truy cập vào K8s/Consul/Docker</li>
+                    <li><strong>Whitebox</strong>: Khi bạn có source code hoặc API specification</li>
+                </ul>
+                
+                <p><strong>2. Cấu hình Safe Mode:</strong></p>
+                <ul style="margin-left: 20px; margin-bottom: 20px;">
+                    <li>Luôn bật Safe Mode khi scan production environment</li>
+                    <li>Sử dụng Scope Protection để giới hạn phạm vi scan</li>
+                    <li>Throttle RPS để tránh gây quá tải target</li>
+                </ul>
+                
+                <p><strong>3. Chọn Attack Depth:</strong></p>
+                <ul style="margin-left: 20px; margin-bottom: 20px;">
+                    <li><strong>Quick</strong>: Scan nhanh với payload cơ bản (5-10 phút)</li>
+                    <li><strong>Deep</strong>: Scan sâu với 500+ signatures (20-40 phút)</li>
+                    <li><strong>Cloud</strong>: Chuyên biệt cho AWS/GCP/Azure metadata</li>
+                    <li><strong>Container</strong>: Targeting Docker/K8s/Consul services</li>
+                </ul>
+                
+                <p><strong>4. Xem kết quả:</strong></p>
+                <ul style="margin-left: 20px;">
+                    <li>Real-time monitoring qua trang <a href="/results" style="color: #667eea;">Results</a></li>
+                    <li>Export report dưới dạng JSON/HTML</li>
+                    <li>Chi tiết findings bao gồm PoC và remediation</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

@@ -31,14 +31,54 @@ const findingsList = document.getElementById('findingsList');
 
 // State
 let startTime = Date.now();
-// Use a single global timer handle to avoid duplicate timers across templates/scripts
-window.ssrfTimerInterval = window.ssrfTimerInterval || null;
 let counts = {
     endpoints: 0,
     params: 0,
     findings: 0,
     critical: 0
 };
+
+// ✅ FIXED: Centralized timer management (shared globally, no memory leak)
+if (!window.ssrfScanTimer) {
+    window.ssrfScanTimer = {
+        intervalId: null,
+        startTime: null,
+        
+        start: function() {
+            if (this.intervalId) {
+                console.warn('⚠️ Timer already running, clearing old timer first');
+                this.stop();
+            }
+            this.startTime = Date.now();
+            this.intervalId = setInterval(() => {
+                const elapsed = Math.floor((Date.now() - this.startTime) / 1000);
+                const minutes = Math.floor(elapsed / 60);
+                const seconds = elapsed % 60;
+                const timeStr = `${minutes}m ${seconds}s`;
+                
+                // Update any visible timer element
+                const timerElem = document.getElementById('progressTime');
+                if (timerElem) {
+                    timerElem.textContent = `Elapsed: ${timeStr}`;
+                }
+            }, 1000);
+            console.log('✅ Global timer started');
+        },
+        
+        stop: function() {
+            if (this.intervalId) {
+                clearInterval(this.intervalId);
+                this.intervalId = null;
+                console.log('⏹️ Global timer stopped');
+            }
+        },
+        
+        reset: function() {
+            this.stop();
+            this.startTime = null;
+        }
+    };
+}
 
 // Config Tabs Switching
 document.querySelectorAll('.config-tab').forEach(tab => {
@@ -225,17 +265,17 @@ scanForm.addEventListener('submit', async function(e) {
         }
         
         if (response.ok) {
-            showNotification('✅ Scan started successfully!', 'success');
+            showNotification('✅ Scan started successfully! Redirecting to results...', 'success');
             
-            // Switch to results view
-            configSection.style.display = 'none';
-            resultsSection.style.display = 'block';
-            
-            // Start timer (only if not already running)
-            startTime = Date.now();
-            if (!window.ssrfTimerInterval) {
-                window.ssrfTimerInterval = setInterval(updateTimer, 1000);
+            // ✅ FIXED: Stop any existing timer before redirect
+            if (window.ssrfScanTimer) {
+                window.ssrfScanTimer.stop();
             }
+            
+            // Redirect to results page
+            setTimeout(() => {
+                window.location.href = '/results';
+            }, 500);
         } else {
             showNotification(result.error || 'Failed to start scan', 'error');
             startBtn.disabled = false;
@@ -246,33 +286,37 @@ scanForm.addEventListener('submit', async function(e) {
     }
 });
 
-// Timer
-function updateTimer() {
-    const elapsed = Math.floor((Date.now() - startTime) / 1000);
-    const minutes = Math.floor(elapsed / 60);
-    const seconds = elapsed % 60;
-    progressTime.textContent = `${minutes}m ${seconds}s`;
+// ✅ REMOVED: Old timer function (now handled by window.ssrfScanTimer)
+
+// Back button - only exists on index.html (not used since we redirect to /results)
+if (backBtn) {
+    backBtn.addEventListener('click', function() {
+        // ✅ FIXED: Use centralized timer stop
+        if (window.ssrfScanTimer) {
+            window.ssrfScanTimer.stop();
+        }
+        
+        resultsSection.style.display = 'none';
+        configSection.style.display = 'block';
+        startBtn.disabled = false;
+    });
 }
 
-// Back button
-backBtn.addEventListener('click', function() {
-    resultsSection.style.display = 'none';
-    configSection.style.display = 'block';
-    startBtn.disabled = false;
-    if (window.ssrfTimerInterval) {
-        clearInterval(window.ssrfTimerInterval);
-        window.ssrfTimerInterval = null;
-    }
-});
-
-// Stop button
-stopBtn.addEventListener('click', function() {
-    if (confirm('Are you sure you want to stop the scan?')) {
-        socket.emit('stop_scan');
-        showNotification('Scan stopped', 'warning');
-        stopBtn.disabled = true;
-    }
-});
+// Stop button - only on index.html (not used since we redirect to /results)
+if (stopBtn) {
+    stopBtn.addEventListener('click', function() {
+        if (confirm('Are you sure you want to stop the scan?')) {
+            // ✅ FIXED: Stop timer when stopping scan
+            if (window.ssrfScanTimer) {
+                window.ssrfScanTimer.stop();
+            }
+            
+            socket.emit('stop_scan');
+            showNotification('Scan stopped', 'warning');
+            stopBtn.disabled = true;
+        }
+    });
+}
 
 // Export button
 exportBtn.addEventListener('click', async function() {
@@ -310,20 +354,16 @@ socket.on('disconnect', function() {
 });
 
 socket.on('progress', function(data) {
-    progressFill.style.width = data.percent + '%';
-    progressFill.textContent = data.percent + '%';
-    progressPhase.textContent = data.phase || 'Processing...';
-    // Defensive: stop timer if backend reports completion
-    try {
-        if (data.percent >= 100) {
-            console.log('Progress 100% received from backend, clearing timer');
-            if (window.ssrfTimerInterval) {
-                clearInterval(window.ssrfTimerInterval);
-                window.ssrfTimerInterval = null;
-            }
+    if (progressFill) progressFill.style.width = data.percent + '%';
+    if (progressFill) progressFill.textContent = data.percent + '%';
+    if (progressPhase) progressPhase.textContent = data.phase || 'Processing...';
+    
+    // ✅ FIXED: Use centralized timer stop
+    if (data.percent >= 100) {
+        console.log('✅ Progress 100% received, stopping timer');
+        if (window.ssrfScanTimer) {
+            window.ssrfScanTimer.stop();
         }
-    } catch (e) {
-        console.warn('Error while handling progress percent check', e);
     }
 });
 
@@ -389,26 +429,30 @@ socket.on('finding', function(data) {
 });
 
 socket.on('scan_complete', function(data) {
-    console.log('socket.on scan_complete payload:', data);
-    if (window.ssrfTimerInterval) {
-        clearInterval(window.ssrfTimerInterval);
-        window.ssrfTimerInterval = null;
+    console.log('✅ Scan complete received:', data);
+    
+    // ✅ FIXED: Use centralized timer stop
+    if (window.ssrfScanTimer) {
+        window.ssrfScanTimer.stop();
     }
+    
     showNotification('Scan completed successfully!', 'success');
-    stopBtn.disabled = true;
-    progressFill.style.width = '100%';
-    progressFill.textContent = '100%';
-    progressPhase.textContent = 'Completed';
+    if (stopBtn) stopBtn.disabled = true;
+    if (progressFill) progressFill.style.width = '100%';
+    if (progressFill) progressFill.textContent = '100%';
+    if (progressPhase) progressPhase.textContent = 'Completed';
 });
 
 socket.on('scan_error', function(data) {
-    console.error('socket.on scan_error payload:', data);
-    if (window.ssrfTimerInterval) {
-        clearInterval(window.ssrfTimerInterval);
-        window.ssrfTimerInterval = null;
+    console.error('❌ Scan error received:', data);
+    
+    // ✅ FIXED: Use centralized timer stop
+    if (window.ssrfScanTimer) {
+        window.ssrfScanTimer.stop();
     }
+    
     showNotification(`Scan error: ${data.message}`, 'error');
-    stopBtn.disabled = true;
+    if (stopBtn) stopBtn.disabled = true;
 });
 
 // Modal Functions

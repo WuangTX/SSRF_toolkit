@@ -13,6 +13,9 @@ from bs4 import BeautifulSoup
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+import logging
+from .js_analyzer import JavaScriptAnalyzer
+from ..detection.callback_strategies import CallbackPayloadGenerator, AdvancedCallbackDetector
 
 class AutoDiscovery:
     """
@@ -42,13 +45,20 @@ class AutoDiscovery:
         parsed = urlparse(base_url)
         self.base_domain = parsed.netloc
         self.base_scheme = parsed.scheme
+        
+        # ✅ Setup logger
+        self.logger = logging.getLogger(__name__)
+        
+        # ✅ Initialize JavaScript analyzer
+        self.js_analyzer = JavaScriptAnalyzer(base_url, self.session, self.logger)
     
-    def run_full_discovery(self, callback_url: str = None, callback_server=None) -> Dict:
+    def run_full_discovery(self, callback_url: str = None, callback_server=None, on_test_callback=None) -> Dict:
         """
         🎯 MAIN METHOD: Chạy toàn bộ discovery pipeline
         
         Args:
             callback_server: Existing callback server (optional)
+            on_test_callback: Callback function(endpoint_data) để emit tested endpoints to UI
         
         Returns:
             {
@@ -87,9 +97,31 @@ class AutoDiscovery:
         
         # Phase 3: Discover API endpoints
         print("\n[3/5] 🔌 Discovering API endpoints...")
+        
+        # ✅ 3a. JavaScript-based discovery (PRIORITY!)
+        print("      🔍 Phase 3a: Analyzing JavaScript for API endpoints...")
+        js_endpoints = self.js_analyzer.discover_from_javascript()
+        print(f"      ✓ JavaScript analysis found {len(js_endpoints)} endpoints")
+        
+        # ✅ DEBUG: Show discovered endpoints
+        if js_endpoints:
+            print("      📋 JavaScript endpoints:")
+            for ep in sorted(js_endpoints)[:10]:  # Show first 10
+                print(f"         • {ep}")
+            if len(js_endpoints) > 10:
+                print(f"         ... and {len(js_endpoints) - 10} more")
+        
+        # ✅ 3b. Traditional discovery (fuzzing)
+        print("      🔍 Phase 3b: Traditional API path fuzzing...")
         api_endpoints = self._discover_api_endpoints()
+        
+        # ✅ Store JS endpoints separately for tagging
+        results['js_endpoints'] = js_endpoints
+        
+        # Merge both
+        api_endpoints.update(js_endpoints)
         results['api_endpoints'] = api_endpoints
-        print(f"      ✓ Found {len(api_endpoints)} API endpoints")
+        print(f"      ✓ Total: {len(api_endpoints)} API endpoints")
         
         # Phase 4: Parse forms
         print("\n[4/5] 📝 Parsing forms...")
@@ -105,7 +137,12 @@ class AutoDiscovery:
         
         # Phase 6: SSRF Testing (with callback server)
         print("\n[6/6] 🔥 Testing for SSRF vulnerabilities...")
-        ssrf_vulnerabilities = self._test_ssrf_vulnerabilities(testable, callback_url, callback_server)
+        ssrf_vulnerabilities = self._test_ssrf_vulnerabilities(
+            testable, 
+            callback_url, 
+            callback_server,
+            on_test_callback=on_test_callback  # ✅ Pass callback to emit endpoints to UI
+        )
         results['ssrf_vulnerabilities'] = ssrf_vulnerabilities
         print(f"      ✓ {len(ssrf_vulnerabilities)} SSRF vulnerabilities found!")
         
@@ -125,6 +162,10 @@ class AutoDiscovery:
         
         self.visited_urls.add(url)
         
+        # ✅ NEW: Store for extracting real IDs
+        if not hasattr(self, 'discovered_resource_ids'):
+            self.discovered_resource_ids = {}  # {resource_type: set(ids)}
+        
         try:
             response = self.session.get(url, timeout=self.timeout, allow_redirects=True)
             
@@ -138,10 +179,34 @@ class AutoDiscovery:
                 links = soup.find_all('a', href=True)
                 for link in links:
                     href = link['href']
+                    
+                    # ✅ FILTER: Skip non-HTTP URLs (tel:, mailto:, javascript:, etc.)
+                    if any(href.startswith(prefix) for prefix in ['tel:', 'mailto:', 'javascript:', 'data:', '#', 'ftp:', 'file:']):
+                        continue
+                    
                     full_url = urljoin(url, href)
                     
-                    # Crawl recursively
-                    if self._is_same_domain(full_url):
+                    # ✅ NEW: Extract real IDs from URLs (e.g., /products/6/, /items/42/)
+                    id_patterns = [
+                        (r'/products?/(\d+)', 'product'),
+                        (r'/items?/(\d+)', 'item'),
+                        (r'/inventory/(\d+)', 'inventory'),
+                        (r'/orders?/(\d+)', 'order'),
+                        (r'/users?/(\d+)', 'user'),
+                        (r'/api/products?/(\d+)', 'product'),
+                        (r'/api/items?/(\d+)', 'item'),
+                    ]
+                    
+                    for pattern, resource_type in id_patterns:
+                        matches = re.findall(pattern, href)
+                        if matches:
+                            if resource_type not in self.discovered_resource_ids:
+                                self.discovered_resource_ids[resource_type] = set()
+                            for match in matches:
+                                self.discovered_resource_ids[resource_type].add(match)
+                    
+                    # Crawl recursively (only HTTP/HTTPS URLs)
+                    if self._is_same_domain(full_url) and full_url.startswith(('http://', 'https://')):
                         self._crawl_website(full_url, depth + 1)
                 
                 # Extract from scripts
@@ -454,8 +519,15 @@ class AutoDiscovery:
         # ✅ SMART API endpoint testing - ONLY for valid discovered endpoints
         print(f"      🔍 Analyzing {len(results['api_endpoints'])} API endpoints...")
         
+        # ✅ Separate JavaScript-discovered endpoints vs fuzzing endpoints
+        js_endpoints = results.get('js_endpoints', set())  # Endpoints from JavaScript analysis
+        
         for api_endpoint in results['api_endpoints']:
             endpoint_path = api_endpoint.lower()
+            
+            # ✅ Determine source: JavaScript or Fuzzing
+            is_from_js = api_endpoint in js_endpoints
+            source = 'javascript' if is_from_js else 'fuzzing'
             
             # ✅ Identify SSRF action trong path
             ssrf_actions_in_path = [
@@ -477,9 +549,13 @@ class AutoDiscovery:
                 # Chọn parameters dựa trên action type
                 if 'callback' in endpoint_path or 'webhook' in endpoint_path:
                     json_params = ['callback_url', 'webhook_url', 'url']
+                elif 'fetch_review' in endpoint_path or 'review' in endpoint_path:
+                    # ✅ FIX: Specific param for review endpoints
+                    json_params = ['review_url', 'url', 'callback_url']
                 elif 'fetch' in endpoint_path or 'proxy' in endpoint_path:
                     json_params = ['url', 'callback_url', 'target_url']
                 elif 'compare' in endpoint_path or 'check_price' in endpoint_path:
+                    # ✅ FIX: Specific param for price check endpoints
                     json_params = ['compare_url', 'url', 'target_url']
                 else:
                     # Default: most common params
@@ -491,8 +567,9 @@ class AutoDiscovery:
                         'endpoint': api_endpoint,
                         'parameter': param,
                         'method': 'POST',
-                        'confidence': 0.9,  # HIGH confidence
-                        'reason': f'SSRF action endpoint with POST JSON param "{param}"'
+                        'confidence': 0.9 if is_from_js else 0.6,  # Higher confidence for JS endpoints
+                        'source': source,  # ✅ NEW: Tag source
+                        'reason': f'[{source.upper()}] SSRF action endpoint with POST JSON param "{param}"'
                     })
         
         # Check forms
@@ -617,7 +694,7 @@ class AutoDiscovery:
             'test_results': test_results
         }
 
-    def _test_ssrf_vulnerabilities(self, testable_endpoints: List[Dict], callback_url: str = None, callback_server=None, max_workers: int = 5) -> List[Dict]:
+    def _test_ssrf_vulnerabilities(self, testable_endpoints: List[Dict], callback_url: str = None, callback_server=None, max_workers: int = 5, on_test_callback=None) -> List[Dict]:
         """
         ✅ PARALLEL SSRF TESTING với ThreadPoolExecutor
         Test multiple endpoints đồng thời để tăng tốc độ
@@ -626,6 +703,7 @@ class AutoDiscovery:
             testable_endpoints: List of endpoints to test
             callback_server: Existing callback server (optional, will create new if None)
             max_workers: Number of parallel threads (default: 5)
+            on_test_callback: Callback function(endpoint_data) to emit tested endpoints to UI
         """
         vulnerabilities = []
         
@@ -641,6 +719,17 @@ class AutoDiscovery:
             # PRIORITY 1: Dùng public callback URL nếu được cung cấp (NGROK - HIGHEST PRIORITY!)
             if callback_url:
                 print(f"      📡 Using PUBLIC callback URL: {callback_url}")
+                
+                # 🔥 WARM UP NGROK URL to bypass warning page
+                if 'ngrok' in callback_url.lower():
+                    print(f"      🔥 Warming up ngrok URL...")
+                    if callback_server and hasattr(callback_server, 'warm_up_ngrok_url'):
+                        accessible = callback_server.warm_up_ngrok_url(callback_url)
+                        if not accessible:
+                            print(f"      ⚠️  WARNING: Ngrok warning page detected!")
+                            print(f"      ⚠️  Target servers may not be able to reach callback!")
+                            print(f"      💡 Solution: Use paid ngrok OR manually visit URL first")
+                
                 # Tạo mock callback server để giữ interface nhất quán
                 # ⚠️ KHÔNG OVERRIDE callback_url!
                 if callback_server is None:
@@ -663,23 +752,64 @@ class AutoDiscovery:
             # ✅ AGGRESSIVE FILTERING
             print(f"      🔍 Filtering {len(testable_endpoints)} candidates...")
             
+            # ✅ NEW: Separate JavaScript vs Fuzzing endpoints
+            js_targets = [t for t in testable_endpoints if t.get('source') == 'javascript']
+            fuzzing_targets = [t for t in testable_endpoints if t.get('source') == 'fuzzing']
+            
+            print(f"         📊 JavaScript endpoints: {len(js_targets)}")
+            print(f"         📊 Fuzzing endpoints: {len(fuzzing_targets)}")
+            print(f"         ✅ PRIORITY: Testing JavaScript endpoints only")
+            
             valid_targets = []
-            for t in testable_endpoints:
+            # ✅ PRIORITY: Only test JavaScript-discovered endpoints (higher quality)
+            for t in js_targets:  # Changed from testable_endpoints to js_targets
                 endpoint = t['endpoint']
                 
-                # Skip placeholders
-                if any(x in endpoint for x in ['{id}', '<id>', '{param}', '{code}']):
-                    continue
+                # ✅ IMPROVED: Use REAL IDs from crawled pages, fallback to expanded test range
+                test_ids = ['1', '6', '10']  # Common IDs: 1 (first), 6 (common test), 10 (double digit)
+                
+                # Extract resource type from endpoint to find real IDs
+                resource_type = None
+                if '/product' in endpoint.lower():
+                    resource_type = 'product'
+                elif '/item' in endpoint.lower():
+                    resource_type = 'item'
+                elif '/inventory' in endpoint.lower():
+                    resource_type = 'inventory'
+                elif '/order' in endpoint.lower():
+                    resource_type = 'order'
+                
+                # Use real discovered IDs if available
+                if resource_type and hasattr(self, 'discovered_resource_ids'):
+                    real_ids = self.discovered_resource_ids.get(resource_type, set())
+                    if real_ids:
+                        # Use first 3 real IDs found
+                        test_ids = sorted(list(real_ids))[:3]
+                        print(f"         ✅ Using REAL IDs for {resource_type}: {test_ids}")
+                    else:
+                        # If no real IDs found, try broader range including 6
+                        print(f"         ⚠️  No real IDs found for {resource_type}, trying: {test_ids}")
+                
+                endpoints_to_test = [endpoint]
+                
+                if '{id}' in endpoint:
+                    endpoints_to_test = [endpoint.replace('{id}', test_id) for test_id in test_ids]
+                elif '<id>' in endpoint:
+                    endpoints_to_test = [endpoint.replace('<id>', test_id) for test_id in test_ids]
                 
                 # ✅ Skip fake/synthetic endpoints (internal, service/services, admin/api, graphql)
                 skip_patterns = ['/internal/', '/service/', '/services/', '/admin/api/', '/graphql/']
                 if any(pattern in endpoint.lower() for pattern in skip_patterns):
                     continue
                 
-                # ✅ Only keep endpoints từ discovered_endpoints (thực sự tồn tại)
-                # hoặc confidence cao (0.9+)
-                if t['confidence'] >= 0.7:  # Only HIGH confidence
-                    valid_targets.append(t)
+                # ✅ Create test targets for each ID
+                for test_endpoint in endpoints_to_test:
+                    # Only keep high confidence
+                    if t['confidence'] >= 0.7:
+                        test_target = t.copy()
+                        test_target['endpoint'] = test_endpoint
+                        test_target['original_endpoint'] = endpoint
+                        valid_targets.append(test_target)
             
             # Sort by confidence - test HIGH confidence first
             sorted_targets = sorted(valid_targets, key=lambda x: x['confidence'], reverse=True)
@@ -702,7 +832,7 @@ class AutoDiscovery:
                     
                     future = executor.submit(
                         self._test_single_ssrf_wrapper,
-                        target, test_callback_url, test_id, callback_server, i, total_to_test
+                        target, test_callback_url, test_id, callback_server, i, total_to_test, on_test_callback
                     )
                     future_to_target[future] = target
                 
@@ -744,17 +874,78 @@ class AutoDiscovery:
         
         return vulnerabilities
     
-    def _test_single_ssrf_wrapper(self, target: Dict, callback_url: str, test_id: str, callback_server, index: int, total: int) -> Optional[Dict]:
-        """Wrapper cho parallel testing"""
+    def _test_single_ssrf_wrapper(self, target: Dict, callback_url: str, test_id: str, callback_server, index: int, total: int, on_test_callback=None) -> Optional[Dict]:
+        """
+        Wrapper cho parallel testing
+        ✅ NEW: Test với CẢ GET VÀ POST để tìm method đúng
+        """
         endpoint = target['endpoint']
         parameter = target['parameter']
-        method = target.get('method', 'GET')
+        suggested_method = target.get('method', 'GET')
         test_type = target.get('type', 'unknown')
         
         display_url = endpoint if len(endpoint) <= 60 else endpoint[:57] + '...'
-        print(f"      🎯 [{index:2d}/{total}] {display_url} ({parameter}) [{method}]")
+        print(f"      🎯 [{index:2d}/{total}] {display_url} ({parameter}) [Testing GET & POST]")
         
-        return self._test_single_ssrf(endpoint, parameter, callback_url, test_id, callback_server, method, test_type)
+        # ✅ STRATEGY: Test cả 2 methods để tìm method đúng
+        # Priority: Test method được suggest trước, sau đó test method còn lại
+        methods_to_test = []
+        if suggested_method.upper() == 'POST':
+            methods_to_test = ['POST', 'GET']  # POST trước
+        else:
+            methods_to_test = ['GET', 'POST']  # GET trước
+        
+        result = None
+        for method in methods_to_test:
+            test_result = self._test_single_ssrf(endpoint, parameter, callback_url, f"{test_id}_{method}", callback_server, method, test_type)
+            
+            # Nếu tìm thấy method hoạt động (không phải 404/405), dùng nó
+            if test_result and test_result.get('status_code') not in [404, 405]:
+                result = test_result
+                break  # Tìm thấy method đúng rồi, không cần test nữa
+        
+        # ✅ Emit ALL tested endpoints to UI (not just vulnerable ones)
+        if on_test_callback and callable(on_test_callback):
+            if result:
+                # Valid test result (whether vulnerable or not)
+                endpoint_data = {
+                    'url': endpoint,
+                    'parameter': parameter,
+                    'method': result.get('method', method),
+                    'test_type': test_type,
+                    'source': target.get('source', 'unknown'),  # ✅ NEW: Pass source tag
+                    'tested': True,
+                    'vulnerable': result.get('vulnerable', False),
+                    'status_code': result.get('status_code', result.get('response_status')),
+                    'payload': result.get('payload', ''),
+                    'callback_received': result.get('callback_received'),
+                    'content_length': 0,
+                    'content_type': 'ssrf-tested'
+                }
+            else:
+                # Test failed/errored - still emit with error info
+                endpoint_data = {
+                    'url': endpoint,
+                    'parameter': parameter,
+                    'method': method,
+                    'test_type': test_type,
+                    'source': target.get('source', 'unknown'),  # ✅ NEW: Pass source tag
+                    'tested': True,
+                    'vulnerable': False,
+                    'status_code': 0,
+                    'payload': f"{method} {parameter}={callback_url}",
+                    'callback_received': None,
+                    'content_length': 0,
+                    'content_type': 'ssrf-test-error'
+                }
+            
+            try:
+                on_test_callback(endpoint_data)
+            except Exception as e:
+                self.logger.warning(f"Callback error: {e}")
+        
+        # ✅ Only return if vulnerable (for vulnerability list)
+        return result if result and result.get('vulnerable', False) else None
 
     def _test_single_ssrf(self, endpoint: str, parameter: str, callback_url: str, test_id: str, callback_server, method: str = 'GET', test_type: str = 'unknown') -> Optional[Dict]:
         """
@@ -879,7 +1070,9 @@ class AutoDiscovery:
 
             # ✅ Wait for callback (single check with configurable timeout)
             # Use callback_server.check_callback_received() to avoid busy polling loops
-            callback_wait = min(2, max(0.5, getattr(self, 'timeout', 2)))
+            # ✅ INCREASED: 2s → 10s để đợi callback qua ngrok tunnel
+            # Ngrok + remote target processing có thể mất 5-10 giây
+            callback_wait = min(10, max(2, getattr(self, 'timeout', 10)))
             print(f" → Waiting for callback (up to {callback_wait}s)...", end='', flush=True)
 
             try:
@@ -901,16 +1094,34 @@ class AutoDiscovery:
                         'payload': payload_info,
                         'callback_url': callback_url,
                         'callback_received': found_cb,
+                        'status_code': response.status_code,
                         'response_status': response.status_code,
                         'response_time': request_time - start_time,
                         'callback_time': found_cb.get('timestamp') if found_cb else None,
                         'severity': 'HIGH',
                         'type': 'SSRF',
-                        'confirmed': True
+                        'confirmed': True,
+                        'vulnerable': True
                     }
                 else:
                     print(f" ❌ No callback")
-                    return None
+                    # ✅ Return test info even if not vulnerable (for UI display)
+                    return {
+                        'endpoint': endpoint,
+                        'parameter': parameter,
+                        'method': method,
+                        'test_type': test_type,
+                        'payload': payload_info,
+                        'callback_url': callback_url,
+                        'callback_received': None,
+                        'status_code': response.status_code,
+                        'response_status': response.status_code,
+                        'response_time': request_time - start_time,
+                        'severity': 'INFO',
+                        'type': 'SSRF_TEST',
+                        'confirmed': False,
+                        'vulnerable': False
+                    }
             except Exception:
                 print(f" ❌ Callback check error")
                 return None

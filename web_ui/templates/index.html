@@ -160,167 +160,12 @@
                 </form>
             </section>
 
-            <!-- Results Section -->
-            <section class="card" id="resultsSection" style="display: none;">
-                <div class="section-header">
-                    <h2>Scan Results</h2>
-                    <div class="controls">
-                        <button class="btn btn-secondary" id="backBtn">Back</button>
-                        <button class="btn btn-secondary" id="exportBtn">Export</button>
-                        <button class="btn btn-danger" id="stopBtn">Stop</button>
-                    </div>
-                </div>
-
-                <!-- Stats -->
-                <div class="stats">
-                    <div class="stat-box">
-                        <div class="stat-value" id="statEndpoints">0</div>
-                        <div class="stat-label">Endpoints</div>
-                    </div>
-                    <div class="stat-box">
-                        <div class="stat-value" id="statParams">0</div>
-                        <div class="stat-label">Parameters</div>
-                    </div>
-                    <div class="stat-box">
-                        <div class="stat-value" id="statFindings">0</div>
-                        <div class="stat-label">Findings</div>
-                    </div>
-                    <div class="stat-box">
-                        <div class="stat-value" id="statCritical">0</div>
-                        <div class="stat-label">Critical</div>
-                    </div>
-                </div>
-
-                <!-- Progress -->
-                <div class="progress-section">
-                    <div class="progress-bar">
-                        <div class="progress-fill" id="progressFill">0%</div>
-                    </div>
-                    <div class="progress-info">
-                        <span id="progressPhase">Initializing...</span>
-                        <span id="progressTime">0s</span>
-                    </div>
-                </div>
-
-                <!-- Tabs -->
-                <div class="tabs">
-                    <button class="tab active" data-tab="logs">Logs</button>
-                    <button class="tab" data-tab="endpoints">Endpoints</button>
-                    <button class="tab" data-tab="findings">Findings</button>
-                </div>
-
-                <!-- Tab Content -->
-                <div class="tab-content active" id="logsTab">
-                    <div class="logs" id="logsList"></div>
-                </div>
-
-                <div class="tab-content" id="endpointsTab">
-                    <div class="list" id="endpointsList">
-                        <p class="empty">No endpoints discovered yet</p>
-                    </div>
-                </div>
-
-                <div class="tab-content" id="findingsTab">
-                    <div class="list" id="findingsList">
-                        <p class="empty">No findings yet</p>
-                    </div>
-                </div>
-            </section>
-
             <!-- Notifications -->
             <div id="notifications"></div>
         </main>
     </div>
 
-    <!-- Finding Detail Modal -->
-    <div id="findingModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 id="modalTitle"></h2>
-                <button class="modal-close" onclick="closeFindingModal()">&times;</button>
-            </div>
-            <div class="modal-body">
-                <!-- Details Section -->
-                <div class="modal-section">
-                    <h3>📋 Chi tiết lỗi</h3>
-                    <div class="detail-grid">
-                        <div class="detail-item">
-                            <span class="detail-label">Severity:</span>
-                            <span class="detail-value" id="modalSeverity"></span>
-                        </div>
-                        <div class="detail-item">
-                            <span class="detail-label">Category:</span>
-                            <span class="detail-value" id="modalCategory"></span>
-                        </div>
-                        <div class="detail-item">
-                            <span class="detail-label">CVSS Score:</span>
-                            <span class="detail-value" id="modalCvss"></span>
-                        </div>
-                        <div class="detail-item">
-                            <span class="detail-label">CWE ID:</span>
-                            <span class="detail-value" id="modalCwe"></span>
-                        </div>
-                        <div class="detail-item">
-                            <span class="detail-label">URL:</span>
-                            <span class="detail-value" id="modalUrl"></span>
-                        </div>
-                        <div class="detail-item">
-                            <span class="detail-label">Method:</span>
-                            <span class="detail-value" id="modalMethod"></span>
-                        </div>
-                        <div class="detail-item">
-                            <span class="detail-label">Parameter:</span>
-                            <span class="detail-value" id="modalParameter"></span>
-                        </div>
-                        <div class="detail-item">
-                            <span class="detail-label">Original Value:</span>
-                            <span class="detail-value" id="modalOriginal"></span>
-                        </div>
-                    </div>
-                    <div class="detail-item full-width">
-                        <span class="detail-label">Description:</span>
-                        <p id="modalDescription"></p>
-                    </div>
-                    <div class="detail-item full-width">
-                        <span class="detail-label">Evidence:</span>
-                        <pre id="modalEvidence"></pre>
-                    </div>
-                </div>
-
-                <!-- Attack Section -->
-                <div class="modal-section attack-section">
-                    <h3>⚔️ Tấn công (Attack POC)</h3>
-                    <div class="attack-controls">
-                        <button class="btn btn-danger" onclick="executeAttack()">
-                            🚀 Execute Attack
-                        </button>
-                        <button class="btn btn-secondary" onclick="copyPoc()">
-                            📋 Copy POC
-                        </button>
-                    </div>
-                    <div class="code-block">
-                        <pre id="modalPoc"></pre>
-                    </div>
-                    <div id="attackResult" class="attack-result" style="display: none;">
-                        <h4>Attack Result:</h4>
-                        <pre id="attackOutput"></pre>
-                    </div>
-                </div>
-
-                <!-- Remediation Section -->
-                <div class="modal-section remediation-section">
-                    <h3>🛡️ Khuyến cáo chỉnh sửa (Remediation)</h3>
-                    <div id="modalRemediation" class="remediation-content"></div>
-                </div>
-
-                <!-- References -->
-                <div class="modal-section">
-                    <h3>📚 References</h3>
-                    <ul id="modalReferences"></ul>
-                </div>
-            </div>
-        </div>
-    </div>
+    <!-- ✅ REMOVED: Finding Detail Modal (unused - index.html redirects to /results before findings are shown) -->
 
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <script>
@@ -328,11 +173,36 @@
         async function updateCallbackServerInfo() {
             console.log('🔍 Checking callback server status...');
             
-            // First, always try localhost:8888 since it's the most reliable
+            // ✅ FIXED: Try ngrok API first (most reliable)
             try {
-                const resp = await fetch('https://unsly-mariam-senilely.ngrok-free.dev/health', {
+                const ngrokResp = await fetch('http://127.0.0.1:4040/api/tunnels', {
                     method: 'GET',
-                    mode: 'cors',
+                    cache: 'no-cache'
+                });
+                const ngrokData = await ngrokResp.json();
+                
+                if (ngrokData.tunnels && ngrokData.tunnels.length > 0) {
+                    // Prefer HTTPS tunnel
+                    const httpsTunnel = ngrokData.tunnels.find(t => t.proto === 'https');
+                    const tunnel = httpsTunnel || ngrokData.tunnels[0];
+                    const publicUrl = tunnel.public_url;
+                    
+                    console.log('🌐 Ngrok tunnel found:', publicUrl);
+                    document.getElementById('callbackUrl').innerHTML = 
+                        `<code style="background: #e0f2fe; padding: 2px 8px; border-radius: 3px;">${publicUrl}</code> 
+                         <span style="color: #10b981;">✓ Ngrok Active</span>`;
+                    document.getElementById('callbackDashboardLink').href = publicUrl;
+                    document.getElementById('callbackDashboardLink').style.display = 'inline';
+                    return;
+                }
+            } catch (ngrokError) {
+                console.log('⚠️ Ngrok not available:', ngrokError.message);
+            }
+            
+            // Fallback: Check localhost:8888
+            try {
+                const resp = await fetch('http://localhost:8888/health', {
+                    method: 'GET',
                     cache: 'no-cache'
                 });
                 
@@ -340,37 +210,11 @@
                     const data = await resp.json();
                     console.log('✅ Callback server is running:', data);
                     
-                    // Now try to get ngrok URL
-                    try {
-                        const ngrokResp = await fetch('http://127.0.0.1:4040/api/tunnels', {
-                            method: 'GET',
-                            cache: 'no-cache'
-                        });
-                        const ngrokData = await ngrokResp.json();
-                        
-                        if (ngrokData.tunnels && ngrokData.tunnels.length > 0) {
-                            // Prefer HTTPS tunnel
-                            const httpsTunnel = ngrokData.tunnels.find(t => t.proto === 'https');
-                            const tunnel = httpsTunnel || ngrokData.tunnels[0];
-                            const publicUrl = tunnel.public_url;
-                            
-                            console.log('🌐 Ngrok tunnel found:', publicUrl);
-                            document.getElementById('callbackUrl').innerHTML = 
-                                `<code style="background: #e0f2fe; padding: 2px 8px; border-radius: 3px;">${publicUrl}</code> 
-                                 <span style="color: #10b981;">✓ Ngrok Active</span>`;
-                            document.getElementById('callbackDashboardLink').href = publicUrl;
-                            document.getElementById('callbackDashboardLink').style.display = 'inline';
-                            return;
-                        }
-                    } catch (ngrokError) {
-                        console.log('⚠️ Ngrok not available:', ngrokError.message);
-                    }
-                    
                     // Callback server running but no ngrok
                     document.getElementById('callbackUrl').innerHTML = 
-                        `<code style="background: #fef3c7; padding: 2px 8px; border-radius: 3px;">https://unsly-mariam-senilely.ngrok-free.dev</code>
+                        `<code style="background: #fef3c7; padding: 2px 8px; border-radius: 3px;">http://localhost:8888</code>
                          <span style="color: #f59e0b;">⚠ Local Only (use ngrok for remote)</span>`;
-                    document.getElementById('callbackDashboardLink').href = 'https://unsly-mariam-senilely.ngrok-free.dev';
+                    document.getElementById('callbackDashboardLink').href = 'http://localhost:8888';
                     document.getElementById('callbackDashboardLink').style.display = 'inline';
                     return;
                 }

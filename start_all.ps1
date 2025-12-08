@@ -2,13 +2,13 @@
 Run callback server, ngrok (to expose it), and the web UI Flask app.
 
 Usage:
-  .\tools\run_with_ngrok_and_app.ps1 [-NgrokPath <path-to-ngrok>] [-CallbackPort <8888>] [-NgrokWaitSeconds <10>]
+  .\run_with_ngrok_and_app.ps1 [-NgrokPath <path-to-ngrok>] [-CallbackPort <8888>] [-NgrokWaitSeconds <10>]
 
 Behavior:
   - Start callback server (tools/callback_server.py) on port 8888
   - Start ngrok in background to forward the callback port (default 8888)
   - Wait for ngrok API to return a public tunnel URL (polls http://127.0.0.1:4040/api/tunnels)
-  - Start the Flask web UI (python web_ui/app.py) in the foreground so you can see logs
+  - Start the Flask web UI (python app.py) in the foreground so you can see logs
   - When the web UI exits, the script will stop both ngrok and callback server
 
 Notes:
@@ -25,9 +25,18 @@ param(
 function Start-CallbackServer {
     param($port)
     try {
-        $callbackPath = Join-Path $PSScriptRoot "callback_server.py"
+        # Get venv python path if exists
+        $venvPython = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
+        if (Test-Path $venvPython) {
+            $pythonCmd = $venvPython
+            Write-Host "🔧 Using virtual environment Python"
+        } else {
+            $pythonCmd = "python"
+        }
+        
+        $callbackPath = Join-Path $PSScriptRoot "tools\callback_server.py"
         Write-Host "Starting callback server on port ${port}: $callbackPath"
-        $proc = Start-Process -FilePath "python" -ArgumentList $callbackPath -PassThru -WindowStyle Normal
+        $proc = Start-Process -FilePath $pythonCmd -ArgumentList $callbackPath -PassThru -WindowStyle Normal
         Start-Sleep -Milliseconds 500
         # Verify it started
         try {
@@ -109,6 +118,10 @@ try {
     if ($publicUrl) {
         Write-Host "✅ ngrok public URL detected: $publicUrl"
         Write-Host "(The web UI will auto-detect this tunnel via http://127.0.0.1:4040/api/tunnels)"
+        
+        # ✅ Set NGROK_URL environment variable for callback testing
+        $env:NGROK_URL = $publicUrl
+        Write-Host "✅ Set NGROK_URL environment variable: $publicUrl"
     } else {
         Write-Warning "No ngrok tunnel detected after waiting $NgrokWaitSeconds s. You can still continue; the app will start but auto-detection won't find a public callback URL."
     }
@@ -117,12 +130,22 @@ try {
     Write-Host "="*70
     Write-Host "🎨 STEP 3: Starting Web UI (port 5000)"
     Write-Host "="*70
+    
+    # Use venv python if exists
+    $venvPython = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
+    if (Test-Path $venvPython) {
+        Write-Host "🔧 Using virtual environment Python"
+        $pythonCmd = $venvPython
+    } else {
+        $pythonCmd = "python"
+    }
+    
     Write-Host "Starting Flask web UI (web_ui/app.py) in foreground..."
     Write-Host "🌐 Access web UI at: http://localhost:5000"
     Write-Host "📊 Access callback dashboard at: http://localhost:8888 or $publicUrl"
     Write-Host ""
     # Run python app in the current session so logs are visible
-    & python web_ui/app.py
+    & $pythonCmd web_ui/app.py
 }
 finally {
     # Cleanup both processes

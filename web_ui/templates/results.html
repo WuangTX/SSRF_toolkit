@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="vi">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SSRF Toolkit - Scan Results</title>
+    <title>SSRF Toolkit - Kết Quả Scan</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
@@ -213,6 +213,24 @@
             transform: translateX(5px);
         }
         
+        .endpoint-item[style*="cursor: pointer"] {
+            border-left-color: #28a745;
+        }
+        
+        .endpoint-item[style*="cursor: pointer"]:hover {
+            background: #d4edda;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .view-details-icon {
+            font-size: 12px;
+            color: #28a745;
+            margin-left: auto;
+            padding: 4px 8px;
+            background: rgba(40, 167, 69, 0.1);
+            border-radius: 4px;
+        }
+        
         .endpoint-url {
             font-weight: bold;
             color: #333;
@@ -299,6 +317,82 @@
             color: #666;
         }
         
+        /* ✅ Modal styles for endpoint details */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 9999;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.5);
+        }
+        
+        .modal-content {
+            background-color: #fefefe;
+            margin: 5% auto;
+            padding: 30px;
+            border: 1px solid #888;
+            border-radius: 10px;
+            width: 80%;
+            max-width: 900px;
+            max-height: 85vh;
+            overflow-y: auto;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+        
+        .modal-content h2 {
+            margin-top: 0;
+            color: #667eea;
+        }
+        
+        .modal-content h3 {
+            color: #333;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 8px;
+            margin-top: 20px;
+        }
+        
+        .modal-section {
+            margin-bottom: 25px;
+        }
+        
+        .close {
+            color: #aaa;
+            float: right;
+            font-size: 32px;
+            font-weight: bold;
+            line-height: 1;
+            cursor: pointer;
+        }
+        
+        .close:hover,
+        .close:focus {
+            color: #000;
+        }
+        
+        .copy-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 5px 12px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.85em;
+            transition: background 0.2s;
+        }
+        
+        .copy-btn:hover {
+            background: #5568d3;
+        }
+        
+        .endpoint-item[style*="cursor: pointer"]:hover {
+            transform: translateX(8px);
+            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+        }
+        
         .finding-item {
             padding: 15px;
             border-radius: 8px;
@@ -370,6 +464,143 @@
         .finding-message {
             color: #333;
             line-height: 1.6;
+        }
+
+        .finding-item {
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .finding-item:hover {
+            transform: translateX(5px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+
+        /* Finding Modal Specific Styles */
+        .modal.active {
+            display: block;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #667eea;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 32px;
+            color: #aaa;
+            cursor: pointer;
+            padding: 0;
+            line-height: 1;
+        }
+
+        .modal-close:hover {
+            color: #000;
+        }
+
+        .detail-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .detail-item {
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 5px;
+        }
+
+        .detail-item.full-width {
+            grid-column: 1 / -1;
+        }
+
+        .detail-label {
+            font-weight: bold;
+            color: #667eea;
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        .detail-value {
+            color: #333;
+        }
+
+        .detail-value.critical {
+            color: #dc3545;
+            font-weight: bold;
+        }
+
+        .detail-value.high {
+            color: #ffc107;
+            font-weight: bold;
+        }
+
+        .detail-value.medium {
+            color: #0dcaf0;
+            font-weight: bold;
+        }
+
+        .detail-value.low {
+            color: #6c757d;
+            font-weight: bold;
+        }
+
+        .code-block {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+
+        .code-block pre {
+            margin: 0;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .remediation-content {
+            background: #f0fff4;
+            padding: 15px;
+            border-left: 4px solid #28a745;
+            border-radius: 5px;
+        }
+
+        .remediation-content ol {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+
+        .remediation-content li {
+            margin: 8px 0;
+        }
+
+        #modalReferences {
+            list-style: none;
+            padding: 0;
+        }
+
+        #modalReferences li {
+            margin: 8px 0;
+            padding: 8px;
+            background: #f8f9fa;
+            border-radius: 4px;
+        }
+
+        #modalReferences a {
+            color: #667eea;
+            text-decoration: none;
+        }
+
+        #modalReferences a:hover {
+            text-decoration: underline;
         }
         
         .empty-state {
@@ -469,17 +700,17 @@
         <div class="container">
             <div class="results-title">
                 <i class="fas fa-chart-line"></i>
-                <h1>Scan Results - Real-time Monitoring</h1>
+                <h1>Kết Quả Scan - Theo Dõi Thời Gian Thực</h1>
             </div>
             <div class="results-actions">
-                <a href="/config" class="btn btn-secondary">
-                    <i class="fas fa-arrow-left"></i> Back to Config
+                <a href="/" class="btn btn-secondary">
+                    <i class="fas fa-arrow-left"></i> Quay lại
                 </a>
                 <button id="exportBtn" class="btn btn-success">
-                    <i class="fas fa-download"></i> Export Report
+                    <i class="fas fa-download"></i> Xuất Báo Cáo
                 </button>
                 <button id="stopBtn" class="btn btn-danger">
-                    <i class="fas fa-stop"></i> Stop Scan
+                    <i class="fas fa-stop"></i> Dừng Scan
                 </button>
             </div>
         </div>
@@ -491,19 +722,19 @@
         <div class="stats-grid" id="statsGrid">
             <div class="stat-card">
                 <div class="stat-value" id="statEndpoints">0</div>
-                <div class="stat-label">Endpoints Found</div>
+                <div class="stat-label">Endpoints Tìm Thấy</div>
             </div>
             <div class="stat-card">
                 <div class="stat-value" id="statParams">0</div>
-                <div class="stat-label">Parameters Tested</div>
+                <div class="stat-label">Parameters Đã Test</div>
             </div>
             <div class="stat-card">
                 <div class="stat-value" id="statFindings">0</div>
-                <div class="stat-label">Findings</div>
+                <div class="stat-label">Phát Hiện</div>
             </div>
             <div class="stat-card">
                 <div class="stat-value" id="statCritical">0</div>
-                <div class="stat-label">Critical Issues</div>
+                <div class="stat-label">Lỗi Nghiêm Trọng</div>
             </div>
         </div>
         
@@ -515,38 +746,38 @@
             <div class="panel progress-panel" id="progressPanel">
                 <h2>
                     <i class="fas fa-tasks"></i> 
-                    Scan Progress
+                    Tiến Trình Scan
                     <span class="status-badge running" id="statusBadge">
-                        <span class="spinner"></span> Running
+                        <span class="spinner"></span> Đang Chạy
                     </span>
                 </h2>
                 <div class="progress-bar">
                     <div class="progress-fill" id="progressFill">0%</div>
                 </div>
                 <div class="progress-info">
-                    <span id="progressPhase">Initializing...</span>
-                    <span id="progressTime">Elapsed: 0s</span>
+                    <span id="progressPhase">Đang khởi động...</span>
+                    <span id="progressTime">Thời gian: 0s</span>
                 </div>
             </div>
             
             <!-- Logs Panel -->
             <div class="panel">
-                <h2><i class="fas fa-terminal"></i> Activity Logs</h2>
+                <h2><i class="fas fa-terminal"></i> Nhật Ký Hoạt Động</h2>
                 <div class="logs-container" id="logsContainer">
                     <div class="empty-state">
                         <i class="fas fa-hourglass-start"></i>
-                        <p>Waiting for scan to start...</p>
+                        <p>Đang chờ scan bắt đầu...</p>
                     </div>
                 </div>
             </div>
             
             <!-- Endpoints Panel -->
             <div class="panel">
-                <h2><i class="fas fa-sitemap"></i> Discovered Endpoints (<span id="endpointCount">0</span>)</h2>
+                <h2><i class="fas fa-sitemap"></i> Endpoints Đã Tìm Thấy (<span id="endpointCount">0</span>)</h2>
                 <div class="endpoint-list" id="endpointsList">
                     <div class="empty-state">
                         <i class="fas fa-search"></i>
-                        <p>No endpoints discovered yet...</p>
+                        <p>Chưa tìm thấy endpoints nào...</p>
                     </div>
                 </div>
             </div>
@@ -554,11 +785,90 @@
         
         <!-- Findings Panel (Full Width) -->
         <div class="panel">
-            <h2><i class="fas fa-bug"></i> Security Findings (<span id="findingCount">0</span>)</h2>
+            <h2><i class="fas fa-bug"></i> Lỗ Hổng Bảo Mật (<span id="findingCount">0</span>)</h2>
             <div id="findingsList">
                 <div class="empty-state">
                     <i class="fas fa-shield-alt"></i>
-                    <p>No security findings yet. This is good news!</p>
+                    <p>Chưa phát hiện lỗ hổng nào. Tin tốt lành!</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Finding Detail Modal -->
+    <div id="findingModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalTitle">Chi Tiết Lỗ Hổng</h2>
+                <button class="modal-close" onclick="closeFindingModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <!-- Details Section -->
+                <div class="modal-section">
+                    <h3>📋 Chi Tiết Lỗi</h3>
+                    <div class="detail-grid">
+                        <div class="detail-item">
+                            <span class="detail-label">Mức độ nghiêm trọng:</span>
+                            <span class="detail-value" id="modalSeverity"></span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Phân loại:</span>
+                            <span class="detail-value" id="modalCategory"></span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">CVSS Score:</span>
+                            <span class="detail-value" id="modalCvss"></span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">CWE ID:</span>
+                            <span class="detail-value" id="modalCwe"></span>
+                        </div>
+                        <div class="detail-item full-width">
+                            <span class="detail-label">URL:</span>
+                            <span class="detail-value" id="modalUrl"></span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Phương thức:</span>
+                            <span class="detail-value" id="modalMethod"></span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Tham số:</span>
+                            <span class="detail-value" id="modalParameter"></span>
+                        </div>
+                    </div>
+                    <div class="detail-item full-width">
+                        <span class="detail-label">Mô tả:</span>
+                        <p id="modalDescription"></p>
+                    </div>
+                    <div class="detail-item full-width">
+                        <span class="detail-label">Bằng chứng:</span>
+                        <pre id="modalEvidence"></pre>
+                    </div>
+                </div>
+
+                <!-- POC Section -->
+                <div class="modal-section">
+                    <h3>⚔️ Miễn Chứng Khai Thác (POC)</h3>
+                    <div style="margin-bottom: 10px;">
+                        <button class="btn btn-secondary" onclick="copyPoc()">
+                            📋 Sao chép POC
+                        </button>
+                    </div>
+                    <div class="code-block">
+                        <pre id="modalPoc"></pre>
+                    </div>
+                </div>
+
+                <!-- Remediation Section -->
+                <div class="modal-section">
+                    <h3>🛡️ Khuyến cáo chỉnh sửa (Remediation)</h3>
+                    <div id="modalRemediation" class="remediation-content"></div>
+                </div>
+
+                <!-- References -->
+                <div class="modal-section">
+                    <h3>📚 Tài Liệu Tham Khảo</h3>
+                    <ul id="modalReferences"></ul>
                 </div>
             </div>
         </div>
@@ -590,25 +900,59 @@
         const findingCount = document.getElementById('findingCount');
         
     // State
-    let startTime = Date.now();
-    // Use global timer handle to avoid duplicates between pages/scripts
-    window.ssrfTimerInterval = window.ssrfTimerInterval || null;
         let endpoints = [];
         let findings = [];
         let logs = [];
         
-        // Update timer
-        function updateTimer() {
-            const elapsed = Math.floor((Date.now() - startTime) / 1000);
-            const minutes = Math.floor(elapsed / 60);
-            const seconds = elapsed % 60;
-            progressTime.textContent = `Elapsed: ${minutes}m ${seconds}s`;
+        // ✅ FIXED: Define timer locally (results.html doesn't load main.js)
+        if (!window.ssrfScanTimer) {
+            window.ssrfScanTimer = {
+                intervalId: null,
+                startTime: null,
+                
+                start: function() {
+                    if (this.intervalId) {
+                        console.warn('⚠️ Timer already running, clearing old timer first');
+                        this.stop();
+                    }
+                    this.startTime = Date.now();
+                    this.intervalId = setInterval(() => {
+                        const elapsed = Math.floor((Date.now() - this.startTime) / 1000);
+                        const phut = Math.floor(elapsed / 60);
+                        const giay = elapsed % 60;
+                        const timeStr = `${phut}p ${giay}s`;
+                        
+                        // Update timer element
+                        const timerElem = document.getElementById('progressTime');
+                        if (timerElem) {
+                            timerElem.textContent = `Thời gian: ${timeStr}`;
+                        }
+                    }, 1000);
+                    console.log('✅ Results page timer started');
+                },
+                
+                stop: function() {
+                    if (this.intervalId) {
+                        clearInterval(this.intervalId);
+                        this.intervalId = null;
+                        console.log('⏹️ Results page timer stopped');
+                    }
+                },
+                
+                reset: function() {
+                    this.stop();
+                    this.startTime = null;
+                }
+            };
         }
         
-        // Start timer (only if not already running)
-        if (!window.ssrfTimerInterval) {
-            window.ssrfTimerInterval = setInterval(updateTimer, 1000);
-        }
+        // Start timer when page loads
+        window.ssrfScanTimer.start();
+        
+        // Cleanup timer when page unloads
+        window.addEventListener('beforeunload', function() {
+            window.ssrfScanTimer.stop();
+        });
         
         // Add notification
         function addNotification(message, type = 'info') {
@@ -661,41 +1005,85 @@
             const endpointItem = document.createElement('div');
             endpointItem.className = 'endpoint-item';
             
-            // Get severity color
-            let severityClass = 'low';
-            if (endpoint.severity === 'critical') severityClass = 'critical';
-            else if (endpoint.severity === 'high') severityClass = 'high';
-            else if (endpoint.severity === 'medium') severityClass = 'medium';
-            
-            // SSRF potential indicator
-            let ssrfIndicator = '';
-            if (endpoint.ssrf_potential && endpoint.ssrf_potential !== 'unknown') {
-                const ssrfColor = endpoint.ssrf_potential === 'high' ? 'danger' : 
-                                endpoint.ssrf_potential === 'medium' ? 'warning' : 'info';
-                ssrfIndicator = `<span class="badge badge-${ssrfColor}">SSRF: ${endpoint.ssrf_potential}</span>`;
+            // ✅ Make endpoint clickable if it has test data (tested=true means it was tested for SSRF)
+            const hasTestData = endpoint.tested || endpoint.parameter || endpoint.payload;
+            if (hasTestData) {
+                endpointItem.style.cursor = 'pointer';
+                endpointItem.title = 'Nhấp để xem chi tiết kiểm tra SSRF';
+                endpointItem.addEventListener('click', function() {
+                    showEndpointModal(endpoint);
+                });
             }
             
-            // POST support indicator
-            let postIndicator = endpoint.accepts_post ? 
-                '<span class="badge badge-success">POST ✓</span>' : 
-                '<span class="badge badge-secondary">GET only</span>';
+            // Get severity color based on status code
+            let severityClass = 'low';
+            if (endpoint.vulnerable) severityClass = 'critical';
+            else if (endpoint.status_code >= 500) severityClass = 'high';
+            else if (endpoint.status_code === 404) severityClass = 'medium';
+            else if (endpoint.status_code >= 400) severityClass = 'medium';
+            else if (endpoint.status_code >= 200 && endpoint.status_code < 300) severityClass = 'low';
+            
+            // ✅ Show parameter info
+            let paramIndicator = '';
+            if (endpoint.parameter) {
+                paramIndicator = `<span class="badge badge-info">📌 ${endpoint.parameter}</span>`;
+            }
+            
+            // ✅ Vulnerable indicator
+            let vulnerableIndicator = '';
+            if (endpoint.vulnerable) {
+                vulnerableIndicator = `<span class="badge badge-danger">🔥 BỊ LỖ HỔNG SSRF!</span>`;
+            }
+            
+            // ✅ Method indicator (GET/POST)
+            let methodIndicator = '';
+            if (endpoint.method) {
+                const methodClass = endpoint.method === 'POST' ? 'success' : 'info';
+                methodIndicator = `<span class="badge badge-${methodClass}">${endpoint.method}</span>`;
+            }
+            
+            // Format test type label for better readability
+            let testTypeLabel = '';
+            let testTypeClass = 'secondary';
+            if (endpoint.test_type === 'api_json_post') {
+                testTypeLabel = 'JSON';
+                testTypeClass = 'warning';
+            } else if (endpoint.test_type === 'api_form_post') {
+                testTypeLabel = 'FORM';
+                testTypeClass = 'warning';
+            } else if (endpoint.test_type === 'api_get_param') {
+                testTypeLabel = 'URL';
+                testTypeClass = 'info';
+            } else if (endpoint.content_type && endpoint.content_type.includes('json')) {
+                testTypeLabel = 'JSON';
+                testTypeClass = 'warning';
+            }
+            
+            let testTypeIndicator = testTypeLabel ? `<span class="badge badge-${testTypeClass}" style="font-size: 0.75em;">📋 ${testTypeLabel}</span>` : '';
+            
+            // Callback URL indicator
+            let callbackIndicator = '';
+            if (endpoint.callback_url || endpoint.payload?.includes('callback')) {
+                callbackIndicator = `<span class="badge badge-primary" style="font-size: 0.75em;">🔗 CALLBACK_URL</span>`;
+            }
             
             endpointItem.innerHTML = `
                 <div class="endpoint-url">
                     <span class="severity-indicator ${severityClass}"></span>
                     ${endpoint.url}
                     <span class="endpoint-badges">
-                        ${ssrfIndicator}
-                        ${postIndicator}
+                        ${vulnerableIndicator}
+                        ${methodIndicator}
+                        ${testTypeIndicator}
+                        ${callbackIndicator}
+                        ${paramIndicator}
                     </span>
+                    ${hasTestData ? '<span class="view-details-icon">🔍 Nhấp để xem chi tiết</span>' : ''}
                 </div>
                 <div class="endpoint-meta">
-                    <span><i class="fas fa-info-circle"></i> Status: ${endpoint.status_code || 'N/A'}</span>
-                    <span><i class="fas fa-file"></i> Size: ${endpoint.content_length || 0} bytes</span>
-                    <span><i class="fas fa-tag"></i> ${endpoint.content_type || 'unknown'}</span>
-                    <span><i class="fas fa-layer-group"></i> Source: ${endpoint.source || 'unknown'}</span>
-                    <span><i class="fas fa-shield-alt"></i> Severity: ${endpoint.severity || 'low'}</span>
-                    <span><i class="fas fa-clock"></i> ${(endpoint.response_time || 0).toFixed(3)}s</span>
+                    <span><i class="fas fa-info-circle"></i> Trạng thái: ${endpoint.status_code || 'N/A'}</span>
+                    <span><i class="fas fa-layer-group"></i> Nguồn: ${endpoint.source || 'không rõ'}</span>
+                    ${endpoint.payload ? '<span><i class="fas fa-code"></i> Đã gửi payload</span>' : ''}
                 </div>
             `;
             
@@ -705,23 +1093,270 @@
             // Update counters
             statEndpoints.textContent = endpoints.length;
             endpointCount.textContent = endpoints.length;
+            
+            // Update params counter
+            const totalParams = endpoints.reduce((sum, ep) => 
+                sum + (ep.parameters ? ep.parameters.length : 0), 0);
+            if (statParams) statParams.textContent = totalParams;
         }
         
-        // Add finding
-        function addFinding(severity, message) {
+        // ✅ NEW: Show endpoint detail modal
+        function showEndpointModal(endpoint) {
+            // Create modal if doesn't exist
+            let modal = document.getElementById('endpointModal');
+            if (!modal) {
+                modal = document.createElement('div');
+                modal.id = 'endpointModal';
+                modal.className = 'modal';
+                modal.innerHTML = `
+                    <div class="modal-content">
+                        <span class="close" onclick="closeEndpointModal()">&times;</span>
+                        <h2 id="endpointModalTitle">Chi Tiết Endpoint</h2>
+                        <div id="endpointModalBody"></div>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+            }
+            
+            // Populate modal
+            const isVulnerable = endpoint.vulnerable;
+            const statusClass = endpoint.status_code >= 200 && endpoint.status_code < 300 ? 'success' : 
+                              endpoint.status_code >= 400 && endpoint.status_code < 500 ? 'warning' : 
+                              endpoint.status_code >= 500 ? 'danger' : 'info';
+            
+            document.getElementById('endpointModalTitle').innerHTML = 
+                isVulnerable ? '🔥 ENDPOINT CÓ LỔ HỔNG SSRF!' : '🎯 Chi Tiết Kiểm Tra SSRF';
+            
+            let html = `
+                <div class="modal-section">
+                    <h3>📍 Đường dẫn Endpoint</h3>
+                    <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; word-break: break-all;">
+                        <code style="font-size: 14px;"><strong>${endpoint.url}</strong></code>
+                    </div>
+                </div>
+                
+                <div class="modal-section">
+                    <h3>📊 Thông Tin Kiểm Tra</h3>
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <tr style="border-bottom: 1px solid #ddd;">
+                            <td style="padding: 8px; font-weight: bold; width: 180px;">Phương thức HTTP:</td>
+                            <td style="padding: 8px;">
+                                <span class="badge badge-${endpoint.method === 'POST' ? 'success' : endpoint.method === 'GET' ? 'info' : 'warning'}" style="font-size: 13px;">
+                                    ${endpoint.method || 'GET'}
+                                </span>
+                            </td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid #ddd;">
+                            <td style="padding: 8px; font-weight: bold;">Loại kiểm tra:</td>
+                            <td style="padding: 8px;">
+                                <span class="badge badge-secondary" style="font-size: 12px;">
+                                    ${endpoint.test_type === 'api_json_post' ? '📄 Request POST JSON' : 
+                                      endpoint.test_type === 'api_form_post' ? '📝 Request POST Form' : 
+                                      endpoint.test_type === 'api_get_param' ? '🔗 Tham số GET' : 
+                                      endpoint.test_type || 'Không rõ'}
+                                </span>
+                            </td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid #ddd;">
+                            <td style="padding: 8px; font-weight: bold;">Tham số kiểm tra:</td>
+                            <td style="padding: 8px;"><code style="background: #f0f0f0; padding: 3px 8px; border-radius: 3px;">${endpoint.parameter || 'N/A'}</code></td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid #ddd;">
+                            <td style="padding: 8px; font-weight: bold;">Trạng thái Response:</td>
+                            <td style="padding: 8px;"><span class="badge badge-${statusClass}">${endpoint.status_code || 'N/A'}</span></td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid #ddd;">
+                            <td style="padding: 8px; font-weight: bold;">Nguồn phát hiện:</td>
+                            <td style="padding: 8px;">
+                                <span class="badge badge-info" style="font-size: 12px;">
+                                    ${endpoint.source === 'javascript' ? '📜 Phân tích JavaScript' : 
+                                      endpoint.source === 'burp' ? '🔍 Burp Suite' : 
+                                      endpoint.source === 'har' ? '📦 File HAR' : 
+                                      endpoint.source || 'Không rõ'}
+                                </span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px; font-weight: bold;">Bị lỗ hổng:</td>
+                            <td style="padding: 8px;">
+                                ${isVulnerable ? '<span class="badge badge-danger" style="font-size: 13px;">✅ CÓ - XÁC NHẬN SSRF!</span>' : '<span class="badge badge-secondary" style="font-size: 13px;">❌ Không nhận được callback</span>'}
+                            </td>
+                        </tr>
+                    </table>
+                </div>
+            `;
+            
+            // Payload details - Hiển thị RÕ RÀNG method và format
+            if (endpoint.payload || endpoint.parameter) {
+                const method = endpoint.method || 'GET';
+                const param = endpoint.parameter || 'url';
+                const payloadValue = endpoint.payload || 'https://attacker-server.com/callback';
+                
+                let payloadDisplay = '';
+                
+                if (method === 'POST') {
+                    // POST request - hiển thị body
+                    if (endpoint.test_type === 'api_json_post') {
+                        payloadDisplay = `
+                            <div style="margin-bottom: 10px;">
+                                <strong style="color: #667eea;">POST Request Body (JSON):</strong>
+                            </div>
+                            <pre style="background: #2d2d2d; color: #f8f8f2; padding: 15px; border-radius: 5px; overflow-x: auto; margin: 0;">
+{
+  "${param}": "${payloadValue}"
+}</pre>`;
+                    } else if (endpoint.test_type === 'api_form_post') {
+                        payloadDisplay = `
+                            <div style="margin-bottom: 10px;">
+                                <strong style="color: #667eea;">POST Request Body (Form Data):</strong>
+                            </div>
+                            <pre style="background: #2d2d2d; color: #f8f8f2; padding: 15px; border-radius: 5px; overflow-x: auto; margin: 0;">${param}=${encodeURIComponent(payloadValue)}</pre>`;
+                    } else {
+                        payloadDisplay = `
+                            <div style="margin-bottom: 10px;">
+                                <strong style="color: #667eea;">POST Request:</strong>
+                            </div>
+                            <pre style="background: #2d2d2d; color: #f8f8f2; padding: 15px; border-radius: 5px; overflow-x: auto; margin: 0;">${param}=${payloadValue}</pre>`;
+                    }
+                } else if (method === 'GET') {
+                    // GET request - hiển thị query parameter
+                    const baseUrl = endpoint.url.split('?')[0];
+                    payloadDisplay = `
+                        <div style="margin-bottom: 10px;">
+                            <strong style="color: #667eea;">GET Request URL:</strong>
+                        </div>
+                        <pre style="background: #2d2d2d; color: #f8f8f2; padding: 15px; border-radius: 5px; overflow-x: auto; margin: 0; word-wrap: break-word; white-space: pre-wrap;">${baseUrl}?${param}=${encodeURIComponent(payloadValue)}</pre>`;
+                } else {
+                    // Other methods (PUT, DELETE, etc.)
+                    payloadDisplay = `
+                        <div style="margin-bottom: 10px;">
+                            <strong style="color: #667eea;">${method} Request:</strong>
+                        </div>
+                        <pre style="background: #2d2d2d; color: #f8f8f2; padding: 15px; border-radius: 5px; overflow-x: auto; margin: 0;">${param}=${payloadValue}</pre>`;
+                }
+                
+                html += `
+                    <div class="modal-section">
+                        <h3>📦 SSRF Test Payload</h3>
+                        <div style="background: #f9f9f9; padding: 15px; border-left: 4px solid #667eea; border-radius: 5px;">
+                            ${payloadDisplay}
+                            <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #ddd;">
+                                <div style="font-size: 12px; color: #666;">
+                                    <strong>📌 Explanation:</strong><br>
+                                    This ${method} request was sent to test for SSRF vulnerability by injecting a payload into the <code>${param}</code> parameter.
+                                    ${endpoint.test_type === 'api_json_post' ? 'The payload was sent as JSON in the request body.' : 
+                                      endpoint.test_type === 'api_form_post' ? 'The payload was sent as form data in the request body.' :
+                                      method === 'GET' ? 'The payload was sent as a URL query parameter.' : 'The payload was sent in the request.'}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            // Callback details if vulnerable
+            if (isVulnerable && endpoint.callback_received) {
+                html += `
+                    <div class="modal-section" style="background: #fff3cd; padding: 15px; border-radius: 5px; border: 2px solid #ffc107;">
+                        <h3 style="color: #856404;">⚠️ Đã Nhận Callback (XÁC NHẬN SSRF)</h3>
+                        <p><strong>Thời gian callback:</strong> ${endpoint.callback_received.timestamp || 'N/A'}</p>
+                        <p><strong>IP nguồn:</strong> ${endpoint.callback_received.source_ip || 'N/A'}</p>
+                        <p><strong>Đường dẫn request:</strong> <code>${endpoint.callback_received.path || 'N/A'}</code></p>
+                    </div>
+                `;
+            }
+            
+            // Exploitation example - hiển thị RÕ RÀNG theo method và test type
+            const method = endpoint.method || 'GET';
+            const param = endpoint.parameter || 'url';
+            let curlExample = '';
+            
+            if (method === 'POST') {
+                if (endpoint.test_type === 'api_json_post') {
+                    // JSON POST
+                    curlExample = `curl -X POST '${endpoint.url}' \\
+  -H 'Content-Type: application/json' \\
+  -d '{"${param}": "https://your-callback-server.com/test"}'`;
+                } else if (endpoint.test_type === 'api_form_post') {
+                    // Form POST
+                    curlExample = `curl -X POST '${endpoint.url}' \\
+  -H 'Content-Type: application/x-www-form-urlencoded' \\
+  -d '${param}=https://your-callback-server.com/test'`;
+                } else {
+                    // Generic POST
+                    curlExample = `curl -X POST '${endpoint.url}' \\
+  -d '${param}=https://your-callback-server.com/test'`;
+                }
+            } else if (method === 'GET') {
+                // GET with query parameter
+                const baseUrl = endpoint.url.split('?')[0];
+                curlExample = `curl '${baseUrl}?${param}=https://your-callback-server.com/test'`;
+            } else {
+                // Other methods (PUT, DELETE, etc.)
+                curlExample = `curl -X ${method} '${endpoint.url}' \\
+  -H 'Content-Type: application/json' \\
+  -d '{"${param}": "https://your-callback-server.com/test"}'`;
+            }
+            
+            html += `
+                <div class="modal-section">
+                    <h3>🛠️ Tái Hiện Thủ Công (Request ${method})</h3>
+                    <div style="background: #f0f0f0; padding: 10px; border-radius: 5px; margin-bottom: 10px;">
+                        <strong>⚠️ Lưu ý:</strong> Lệnh curl này tái hiện chính xác request <strong style="color: #667eea;">${method}</strong> đã được kiểm tra.
+                        Thay <code>your-callback-server.com</code> bằng URL callback server của bạn.
+                    </div>
+                    <pre style="background: #282c34; color: #abb2bf; padding: 15px; border-radius: 5px; overflow-x: auto; font-size: 12px;">${curlExample}</pre>
+                    <button class="copy-btn" onclick="copyToClipboard(\`${curlExample.replace(/`/g, '\\`')}\`)" style="margin-top: 10px;">📋 Sao chép lệnh curl</button>
+                </div>
+            `;
+            
+            document.getElementById('endpointModalBody').innerHTML = html;
+            modal.style.display = 'block';
+        }
+        
+        window.closeEndpointModal = function() {
+            const modal = document.getElementById('endpointModal');
+            if (modal) modal.style.display = 'none';
+        }
+        
+        window.copyToClipboard = function(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                addNotification('✅ Đã sao chép vào clipboard!', 'success');
+            }).catch(() => {
+                addNotification('❌ Không thể sao chép', 'error');
+            });
+        }
+        
+        // Add finding with full data
+        function addFinding(findingData) {
             if (findings.length === 0) {
                 findingsList.innerHTML = '';
             }
+            
+            const severity = findingData.severity || 'MEDIUM';
+            const message = findingData.message || findingData.title || findingData.description || 'Vulnerability found';
             
             const findingItem = document.createElement('div');
             findingItem.className = `finding-item ${severity.toLowerCase()}`;
             findingItem.innerHTML = `
                 <div class="finding-severity ${severity.toLowerCase()}">${severity}</div>
                 <div class="finding-message">${message}</div>
+                <div style="font-size: 0.85em; color: #666; margin-top: 8px;">
+                    ${findingData.affected_url ? '🔗 ' + findingData.affected_url : ''}
+                    ${findingData.category ? ' • 📁 ' + findingData.category : ''}
+                </div>
             `;
             
+            // Store full finding data
+            findingItem.dataset.finding = JSON.stringify(findingData);
+            
+            // Add click handler to show modal
+            findingItem.addEventListener('click', function() {
+                showFindingModal(JSON.parse(this.dataset.finding));
+            });
+            
             findingsList.insertBefore(findingItem, findingsList.firstChild);
-            findings.push({ severity, message });
+            findings.push(findingData);
             
             // Update counters
             statFindings.textContent = findings.length;
@@ -732,31 +1367,102 @@
             
             // Show notification for critical findings
             if (severity === 'CRITICAL') {
-                addNotification(`🚨 Critical vulnerability found!`, 'error');
+                addNotification(`🚨 Phát hiện lỗ hổng nghiêm trọng!`, 'error');
             }
         }
+
+        // Show finding modal with details
+        function showFindingModal(finding) {
+            const modal = document.getElementById('findingModal');
+            
+            // Populate modal content
+            document.getElementById('modalTitle').textContent = finding.title || 'Chi Tiết Lỗ Hổng';
+            
+            const severityElem = document.getElementById('modalSeverity');
+            severityElem.textContent = finding.severity || 'MEDIUM';
+            severityElem.className = `detail-value ${(finding.severity || 'medium').toLowerCase()}`;
+            
+            document.getElementById('modalCategory').textContent = finding.category || 'SSRF';
+            document.getElementById('modalCvss').textContent = finding.cvss_score || 'N/A';
+            document.getElementById('modalCwe').textContent = finding.cwe_id || 'CWE-918';
+            document.getElementById('modalUrl').textContent = finding.affected_url || 'N/A';
+            document.getElementById('modalMethod').textContent = finding.method || 'N/A';
+            document.getElementById('modalParameter').textContent = finding.parameter || 'N/A';
+            document.getElementById('modalDescription').textContent = finding.description || finding.message || '';
+            document.getElementById('modalEvidence').textContent = finding.evidence || finding.proof_of_concept || 'Không có bằng chứng';
+            document.getElementById('modalPoc').textContent = finding.proof_of_concept || finding.payload || 'Không có POC';
+            
+            // Remediation
+            const remediationDiv = document.getElementById('modalRemediation');
+            if (finding.remediation) {
+                const steps = finding.remediation.split('\n');
+                remediationDiv.innerHTML = '<ol>' + steps.map(step => 
+                    step.trim() ? `<li>${step.replace(/^\d+\.\s*/, '')}</li>` : ''
+                ).join('') + '</ol>';
+            } else {
+                remediationDiv.innerHTML = '<p>Tuân theo hướng dẫn OWASP để ngăn chặn SSRF.</p>';
+            }
+            
+            // References
+            const refList = document.getElementById('modalReferences');
+            refList.innerHTML = '';
+            if (finding.references && finding.references.length > 0) {
+                finding.references.forEach(ref => {
+                    const li = document.createElement('li');
+                    li.innerHTML = `<a href="${ref}" target="_blank">${ref}</a>`;
+                    refList.appendChild(li);
+                });
+            } else {
+                refList.innerHTML = '<li><a href="https://owasp.org/www-community/attacks/Server_Side_Request_Forgery" target="_blank">OWASP SSRF</a></li>';
+            }
+            
+            // Show modal
+            modal.classList.add('active');
+        }
+
+        function closeFindingModal() {
+            const modal = document.getElementById('findingModal');
+            modal.classList.remove('active');
+        }
+
+        function copyPoc() {
+            const pocText = document.getElementById('modalPoc').textContent;
+            navigator.clipboard.writeText(pocText).then(() => {
+                addNotification('✅ Đã sao chép POC!', 'success');
+            }).catch(err => {
+                addNotification('❌ Không thể sao chép POC', 'error');
+            });
+        }
+
+        // Close modal when clicking outside
+        window.addEventListener('click', function(event) {
+            const modal = document.getElementById('findingModal');
+            if (event.target === modal) {
+                closeFindingModal();
+            }
+        });
         
         // Socket event handlers
         socket.on('connect', function() {
             console.log('Connected to server');
-            addNotification('✅ Connected to scan server', 'success');
+            addNotification('✅ Đã kết nối với server scan', 'success');
         });
         
         socket.on('disconnect', function() {
             console.log('Disconnected from server');
-            addNotification('⚠️ Connection lost. Trying to reconnect...', 'warning');
+            addNotification('⚠️ Mất kết nối. Đang thử kết nối lại...', 'warning');
         });
         
         socket.on('progress', function(data) {
             progressFill.style.width = data.percent + '%';
             progressFill.textContent = data.percent + '%';
-            progressPhase.textContent = data.phase || 'Processing...';
-            // Defensive: stop timer if percent indicates completion
+            progressPhase.textContent = data.phase || 'Đang xử lý...';
+            
+            // ✅ FIXED: Use centralized timer
             if (data.percent >= 100) {
-                console.log('results.html: progress 100% received, clearing timer');
-                if (window.ssrfTimerInterval) {
-                    clearInterval(window.ssrfTimerInterval);
-                    window.ssrfTimerInterval = null;
+                console.log('✅ Progress 100% received, stopping timer');
+                if (window.ssrfScanTimer) {
+                    window.ssrfScanTimer.stop();
                 }
             }
         });
@@ -770,43 +1476,49 @@
         });
         
         socket.on('finding', function(data) {
-            addFinding(data.severity, data.message);
+            // Pass full finding data object
+            addFinding(data);
         });
         
         socket.on('scan_complete', function(data) {
-            console.log('results.html: received scan_complete', data);
-            if (window.ssrfTimerInterval) {
-                clearInterval(window.ssrfTimerInterval);
-                window.ssrfTimerInterval = null;
+            console.log('✅ Scan complete received:', data);
+            
+            // ✅ FIXED: Use centralized timer
+            if (window.ssrfScanTimer) {
+                window.ssrfScanTimer.stop();
             }
-            statusBadge.innerHTML = '<i class="fas fa-check-circle"></i> Completed';
+            
+            statusBadge.innerHTML = '<i class="fas fa-check-circle"></i> Hoàn Thành';
             statusBadge.className = 'status-badge completed';
-            addNotification('✅ Scan completed successfully!', 'success');
+            addNotification('✅ Scan hoàn thành thành công!', 'success');
             stopBtn.disabled = true;
         });
         
         socket.on('scan_error', function(data) {
-            console.error('results.html: received scan_error', data);
-            if (window.ssrfTimerInterval) {
-                clearInterval(window.ssrfTimerInterval);
-                window.ssrfTimerInterval = null;
+            console.error('❌ Scan error received:', data);
+            
+            // ✅ FIXED: Use centralized timer
+            if (window.ssrfScanTimer) {
+                window.ssrfScanTimer.stop();
             }
-            statusBadge.innerHTML = '<i class="fas fa-times-circle"></i> Error';
+            
+            statusBadge.innerHTML = '<i class="fas fa-times-circle"></i> Lỗi';
             statusBadge.className = 'status-badge error';
-            addNotification(`❌ Scan error: ${data.message}`, 'error');
+            addNotification(`❌ Lỗi scan: ${data.message}`, 'error');
         });
         
         // Stop button
                 stopBtn.addEventListener('click', function() {
-            if (confirm('Are you sure you want to stop the scan?')) {
+            if (confirm('Bạn có chắc chắn muốn dừng scan?')) {
+                // ✅ FIXED: Use centralized timer
+                if (window.ssrfScanTimer) {
+                    window.ssrfScanTimer.stop();
+                }
+                
                 socket.emit('stop_scan');
-                        if (window.ssrfTimerInterval) {
-                            clearInterval(window.ssrfTimerInterval);
-                            window.ssrfTimerInterval = null;
-                        }
-                statusBadge.innerHTML = '<i class="fas fa-stop-circle"></i> Stopped';
+                statusBadge.innerHTML = '<i class="fas fa-stop-circle"></i> Đã Dừng';
                 statusBadge.className = 'status-badge error';
-                addNotification('⏹️ Scan stopped by user', 'warning');
+                addNotification('⏹️ Scan đã dừng bởi người dùng', 'warning');
                 stopBtn.disabled = true;
             }
         });
@@ -827,17 +1539,25 @@
                     a.href = url;
                     a.download = `scan_report_${Date.now()}.json`;
                     a.click();
-                    addNotification('✅ Report exported successfully!', 'success');
+                    addNotification('✅ Xuất báo cáo thành công!', 'success');
                 } else {
-                    addNotification('❌ Failed to export report', 'error');
+                    addNotification('❌ Không thể xuất báo cáo', 'error');
                 }
             } catch (error) {
-                addNotification(`❌ Export error: ${error.message}`, 'error');
+                addNotification(`❌ Lỗi xuất: ${error.message}`, 'error');
             }
         });
         
         // Initial message
-        addNotification('🚀 Scan started! Monitoring in real-time...', 'info');
+        addNotification('🚀 Scan đã bắt đầu! Đang theo dõi thời gian thực...', 'info');
+        
+        // ✅ Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('endpointModal');
+            if (event.target == modal) {
+                modal.style.display = 'none';
+            }
+        }
     </script>
 </body>
 </html>

@@ -15,6 +15,15 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 import urllib3
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+env_path = Path(__file__).parent.parent / '.env'
+if env_path.exists():
+    load_dotenv(env_path)
+    print(f"✅ Loaded environment variables from {env_path}")
+else:
+    print(f"⚠️  .env file not found at {env_path}")
 
 # Suppress SSL warnings for target validation
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -33,6 +42,210 @@ from blackbox.detection.external_callback import CallbackServer, ExternalCallbac
 from blackbox.exploitation.internal_scan import InternalScanner
 from graybox.architecture.docker_inspector import DockerInspector
 from whitebox.static_analysis.code_scanner import CodeScanner
+
+# ============================================
+# Callback Server Client Wrapper
+# ============================================
+class CallbackServerClient:
+    """
+    Client wrapper to interact with external callback server.
+    Instead of starting a new server, this connects to an existing one.
+    """
+    def __init__(self, host: str = '127.0.0.1', port: int = 8888):
+        self.host = host
+        self.port = port
+        self.base_url = f"http://{host}:{port}"
+        self.is_running = True  # External server is assumed running
+        
+    def get_all_callback_addresses(self):
+        """Get all possible callback addresses from external server"""
+        try:
+            response = requests.get(f"{self.base_url}/api/addresses", timeout=2)
+            if response.status_code == 200:
+                data = response.json()
+                return data.get('addresses', [self.host])
+        except:
+            pass
+        # Fallback
+        return [self.host, 'localhost']
+    
+    def get_callback_url(self, path: str = '', address: str = None):
+        """
+        Get callback URL for testing. Compatible with ExternalCallbackDetector.
+        
+        Args:
+            path: URL path (default: '')
+            address: Specific callback address to use (if None, auto-detect public URL)
+        
+        Priority:
+            1. CALLBACK_URL from .env (vĩnh viễn domain like ngrok paid)
+            2. NGROK_URL from auto-detection (ngrok free - changes every restart)
+            3. Specific address if provided
+            4. Fallback to localhost
+        """
+        # Priority 1: Check for configured callback URL (highest priority)
+        callback_url = os.environ.get('CALLBACK_URL')
+        if callback_url and not address:
+            # Use configured URL (e.g., ngrok fixed domain: https://your-domain.ngrok-free.app)
+            callback_base = callback_url.rstrip('/')
+            if path:
+                return f"{callback_base}{path}"
+            return callback_base
+        
+        # Priority 2: Auto-detected ngrok URL (for ngrok free users)
+        ngrok_url = os.environ.get('NGROK_URL')
+        if ngrok_url and not address:
+            ngrok_base = ngrok_url.rstrip('/')
+            if path:
+                return f"{ngrok_base}{path}"
+            return ngrok_base
+        
+        # Priority 3: Use specific address if provided
+        if address:
+            # Filter out localhost/127.0.0.1 if we have better options
+            if address in ['localhost', '127.0.0.1'] and (callback_url or ngrok_url):
+                # Prefer configured/ngrok URL over localhost
+                public_url = (callback_url or ngrok_url).rstrip('/')
+                if path:
+                    return f"{public_url}{path}"
+                return public_url
+            # Use specific address (e.g., Docker host, LAN IP)
+            return f"http://{address}:8888{path}"
+        
+        # Priority 4: Fallback to localhost (last resort)
+        if path:
+            return f"{self.base_url}/{path.lstrip('/')}"
+        return self.base_url
+    
+    def get_all_callback_addresses(self):
+        """
+        Get all possible callback addresses with priority order.
+        Compatible with ExternalCallbackDetector.
+        
+        Priority:
+            1. CALLBACK_URL from .env (vĩnh viễn - ưu tiên cao nhất)
+            2. NGROK_URL from auto-detection (ngrok free)
+            3. Other addresses from callback server (Docker, LAN)
+            4. Localhost (fallback)
+        """
+        addresses = []
+        
+        # Priority 1: Configured callback URL (highest - vĩnh viễn domain)
+        callback_url = os.environ.get('CALLBACK_URL')
+        if callback_url:
+            try:
+                from urllib.parse import urlparse
+                parsed = urlparse(callback_url)
+                callback_host = parsed.netloc or parsed.path
+                if callback_host:
+                    addresses.append(callback_host)
+            except Exception:
+                pass
+        
+        # Priority 2: Auto-detected ngrok URL (for free users)
+        ngrok_url = os.environ.get('NGROK_URL')
+        if ngrok_url:
+            try:
+                from urllib.parse import urlparse
+                parsed = urlparse(ngrok_url)
+                ngrok_host = parsed.netloc or parsed.path
+                # Avoid duplicates
+                if ngrok_host and ngrok_host not in addresses:
+                    addresses.append(ngrok_host)
+            except Exception:
+                pass
+        
+        # Priority 3: Get other addresses from callback server (Docker, LAN)
+        try:
+            response = requests.get(f"{self.base_url}/addresses", timeout=2)
+            if response.status_code == 200:
+                server_addresses = response.json().get('addresses', [])
+                # Filter out localhost if we have public URL
+                if callback_url or ngrok_url:
+                    server_addresses = [addr for addr in server_addresses 
+                                       if addr not in ['localhost', '127.0.0.1', '::1']]
+                # Avoid duplicates
+                for addr in server_addresses:
+                    if addr not in addresses:
+                        addresses.append(addr)
+        except Exception:
+            pass
+        
+        # Priority 4: Fallback to localhost only if no other addresses
+        if not addresses:
+            addresses = ['127.0.0.1']
+        
+        return addresses
+    
+    def clear_callbacks(self):
+        """Clear callback history. Compatible with ExternalCallbackDetector."""
+        try:
+            response = requests.post(f"{self.base_url}/api/clear", timeout=2)
+            return response.status_code == 200
+        except Exception:
+            return False
+    
+    def check_callback_received(self, path: str, timeout: int = 5):
+        """Check if callback was received for specific path"""
+        try:
+            # Query external callback server's database
+            response = requests.get(
+                f"{self.base_url}/api/check_callback",
+                params={'path': path, 'timeout': timeout},
+                timeout=timeout + 1
+            )
+            if response.status_code == 200:
+                data = response.json()
+                return data.get('received', False)
+        except Exception as e:
+            print(f"⚠️ Error checking callback: {e}")
+        return False
+    
+    def get_callbacks(self, timeout: int = 5):
+        """
+        Get all recent callbacks from external callback server.
+        Compatible with ExternalCallbackDetector.
+        
+        Args:
+            timeout: Timeout in seconds (default: 5)
+        
+        Returns:
+            List of callback dictionaries
+        """
+        try:
+            response = requests.get(
+                f"{self.base_url}/api/callbacks",
+                params={'timeout': timeout},
+                timeout=timeout + 1
+            )
+            if response.status_code == 200:
+                data = response.json()
+                return data.get('callbacks', [])
+        except Exception as e:
+            print(f"⚠️ Error getting callbacks: {e}")
+        return []
+    
+    def get_callbacks_for_test(self, test_id: str):
+        """Get all callbacks for a specific test"""
+        try:
+            response = requests.get(
+                f"{self.base_url}/api/callbacks",
+                params={'test_id': test_id},
+                timeout=2
+            )
+            if response.status_code == 200:
+                return response.json().get('callbacks', [])
+        except:
+            pass
+        return []
+    
+    def stop(self):
+        """No-op - external server keeps running"""
+        pass
+
+# ============================================
+# Flask App Setup
+# ============================================
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'ssrf-pentest-toolkit-secret-key'
@@ -73,15 +286,27 @@ def add_finding(finding: dict):
     with scan_state_lock:
         scan_state['findings'].append(finding)
     
-    # Emit to UI via SocketIO
+    # Emit to UI via SocketIO - send full finding data
     try:
-        socketio.emit('finding', {
+        # Prepare full finding data for frontend
+        finding_data = {
             'severity': finding.get('severity', 'MEDIUM'),
+            'title': finding.get('title', 'SSRF Vulnerability'),
             'message': finding.get('description') or finding.get('title', 'Vulnerability found'),
-            'category': finding.get('category', 'Unknown'),
+            'description': finding.get('description', ''),
+            'category': finding.get('category', 'SSRF'),
             'affected_url': finding.get('affected_url', ''),
+            'method': finding.get('method', 'N/A'),
+            'parameter': finding.get('parameter', 'N/A'),
+            'cvss_score': finding.get('cvss_score', 'N/A'),
+            'cwe_id': finding.get('cwe_id', 'CWE-918'),
+            'evidence': finding.get('evidence', ''),
+            'proof_of_concept': finding.get('proof_of_concept') or finding.get('payload', ''),
+            'remediation': finding.get('remediation', ''),
+            'references': finding.get('references', []),
             'timestamp': finding.get('timestamp', datetime.now().isoformat())
-        })
+        }
+        socketio.emit('finding', finding_data)
     except Exception as e:
         pass  # Non-fatal: finding still saved to state
 
@@ -122,56 +347,54 @@ def set_callback_server(server):
 
 def get_or_create_callback_server(port: int = 8888):
     """
-    Get or create a singleton callback server to avoid port conflicts.
-    This ensures only one server runs on a given port at a time.
+    Connect to external callback server (started by start_all.ps1).
+    Returns a client wrapper instead of creating a new server instance.
     """
     global global_callback_server
     
     with callback_server_lock:
-        # Check if server exists and is running
+        # Check if we already have a client wrapper
         if global_callback_server is not None:
-            try:
-                # Test if server is still alive
-                if hasattr(global_callback_server, 'is_running') and global_callback_server.is_running:
-                    web_logger.info(f"♻️ Reusing existing callback server on port {port}")
-                    return global_callback_server
-                else:
-                    # Server exists but not running - clean up
-                    web_logger.info(f"🧹 Cleaning up stale callback server")
-                    try:
-                        global_callback_server.stop()
-                    except:
-                        pass
-                    global_callback_server = None
-            except:
-                # Server object is corrupted - clean up
-                global_callback_server = None
+            web_logger.info(f"♻️ Reusing existing callback client (port {port})")
+            return global_callback_server
         
-        # Create new server
+        # Create client wrapper to connect to external server
         try:
-            web_logger.info(f"🆕 Creating new callback server on port {port}")
-            server = CallbackServer(host='0.0.0.0', port=port)
-            server.start()
-            global_callback_server = server
-            return server
-        except OSError as e:
-            if "Address already in use" in str(e):
-                web_logger.error(f"❌ Port {port} is already in use!")
-                web_logger.error(f"💡 Try: 1) Wait 30s for old server to timeout, or 2) Use different port")
-                raise Exception(f"Callback server port {port} is busy. Please wait or use another port.")
+            web_logger.info(f"🔌 Connecting to external callback server on port {port}...")
+            
+            # Test if server is already running
+            test_response = requests.get(f"http://127.0.0.1:{port}/health", timeout=2)
+            if test_response.status_code == 200:
+                web_logger.info(f"✅ Connected to external callback server on port {port}")
+                
+                # Create client wrapper object
+                client = CallbackServerClient(host='127.0.0.1', port=port)
+                global_callback_server = client
+                return client
+            else:
+                web_logger.error(f"❌ Callback server on port {port} returned status {test_response.status_code}")
+                raise Exception(f"Callback server health check failed")
+                
+        except requests.exceptions.ConnectionError:
+            web_logger.error(f"❌ Cannot connect to callback server on port {port}")
+            web_logger.error(f"💡 Make sure start_all.ps1 has started the callback server first!")
+            raise Exception(f"Callback server on port {port} is not running. Please start it with start_all.ps1")
+        except Exception as e:
+            web_logger.error(f"❌ Error connecting to callback server: {e}")
             raise
 
 def cleanup_callback_server():
-    """Thread-safe cleanup of global callback server"""
+    """Thread-safe cleanup of callback server client wrapper"""
     global global_callback_server
     
     with callback_server_lock:
         if global_callback_server is not None:
             try:
-                web_logger.info("🛑 Stopping callback server...")
-                global_callback_server.stop()
+                web_logger.info("🔌 Disconnecting from callback server...")
+                # No need to stop - external server keeps running
+                # Just clear our client reference
             except Exception as e:
-                web_logger.warning(f"⚠️ Error stopping callback server: {e}")
+                web_logger.warning(f"⚠️ Error during cleanup: {e}")
             finally:
                 global_callback_server = None
 
@@ -180,6 +403,12 @@ def detect_public_callback_url():
     Auto-detect public callback URL from ngrok or other tunneling services.
     Returns: (url, source) tuple or (None, None) if not detected
     """
+    # Strategy 0: Check for manual override from environment or config
+    manual_url = os.environ.get('CALLBACK_URL')
+    if manual_url:
+        web_logger.info(f"🎯 Using manual callback URL from env: {manual_url}")
+        return (manual_url.rstrip('/'), 'manual')
+    
     # Strategy 1: Try ngrok API (most reliable)
     try:
         ngrok_response = requests.get('http://127.0.0.1:4040/api/tunnels', timeout=2)
@@ -189,6 +418,18 @@ def detect_public_callback_url():
                 # Prefer HTTPS tunnel
                 if tunnel.get('proto') == 'https':
                     url = tunnel['public_url'].rstrip('/')
+                    
+                    # 🔥 Warm up ngrok URL to check for warning page
+                    callback_server = get_or_create_callback_server()
+                    if hasattr(callback_server, 'warm_up_ngrok_url'):
+                        web_logger.info(f"🔥 Warming up ngrok URL: {url}")
+                        accessible = callback_server.warm_up_ngrok_url(url)
+                        if not accessible:
+                            web_logger.warning("⚠️  Ngrok warning page detected!")
+                            web_logger.warning("⚠️  Target servers may fail to reach callback!")
+                            web_logger.warning("💡 Solution 1: Visit ngrok URL in browser first")
+                            web_logger.warning("💡 Solution 2: Upgrade to paid ngrok plan")
+                    
                     return (url, 'ngrok')
             # Fallback to HTTP if no HTTPS
             for tunnel in tunnels:
@@ -249,8 +490,28 @@ web_logger = WebUILogger()
 
 @app.route('/')
 def index():
-    """Main dashboard"""
-    return render_template('index.html')
+    """Main dashboard - workflow selector"""
+    return render_template('dashboard.html')
+
+@app.route('/blackbox')
+def blackbox_scan():
+    """Blackbox scan page"""
+    return render_template('blackbox.html')
+
+@app.route('/graybox')
+def graybox_scan():
+    """Graybox scan page"""
+    return render_template('graybox.html')
+
+@app.route('/whitebox')
+def whitebox_scan():
+    """Whitebox scan page"""
+    return render_template('whitebox.html')
+
+@app.route('/results')
+def results():
+    """Results page - real-time scan results"""
+    return render_template('results.html')
 
 @app.route('/api/scan/start', methods=['POST'])
 def start_scan():
@@ -321,8 +582,7 @@ def start_scan():
                 # Extract target URL from parsed requests
                 if har_data['requests']:
                     first_request = har_data['requests'][0]
-                    parsed_url = urlparse(first_request['url'])
-                    extracted_target = f"{parsed_url.scheme}://{parsed_url.netloc}"
+                    extracted_target = first_request['url']  # Use full URL including path
                     web_logger.info(f"🎯 Extracted target from Burp file: {extracted_target}")
                 else:
                     extracted_target = None
@@ -343,14 +603,15 @@ def start_scan():
         target = request.form.get('target')
         source_path = request.form.get('source_path', '')
         auto_discovery = request.form.get('auto_discovery') == 'on'
-        endpoint_discovery = request.form.get('endpoint_discovery') == 'on'
-        parameter_fuzzing = request.form.get('parameter_fuzzing') == 'on'
-        callback_testing = request.form.get('callback_testing') == 'on'
-        internal_scanning = request.form.get('internal_scanning') == 'on'
-        docker_inspection = request.form.get('docker_inspection') == 'on'
-        code_scanning = request.form.get('code_scanning') == 'on'
+        # Default to True if not explicitly set (for compatibility with simplified UI)
+        endpoint_discovery = request.form.get('endpoint_discovery', 'on') == 'on'
+        parameter_fuzzing = request.form.get('parameter_fuzzing', 'on') == 'on'
+        callback_testing = request.form.get('callback_testing', 'on') == 'on'
+        internal_scanning = request.form.get('internal_scanning', 'on') == 'on'
+        docker_inspection = request.form.get('docker_inspection', 'on') == 'on'
+        code_scanning = request.form.get('code_scanning', 'on') == 'on'
         timeout = int(request.form.get('timeout', 10))
-        endpoint_source = request.form.get('endpoint_source', 'file')  # 'file', 'url', or 'both'
+        endpoint_source = request.form.get('endpoint_source', 'url')  # Default 'url' for direct API testing
         
         # Burp import specific fields
         if not target:
@@ -404,6 +665,9 @@ def start_scan():
     else:
         return jsonify({'error': 'No form data or JSON data received. Please check your request.'}), 400
     
+    # Get skip_validation option (for cases where target might be temporarily unavailable)
+    skip_validation = request.form.get('skip_validation') == 'on' if request.form else False
+    
     # Validate input
     if not target and mode != 'whitebox' and not har_data:
         web_logger.error(f"Validation failed: target={target}, mode={mode}, har_data={har_data}")
@@ -428,37 +692,49 @@ def start_scan():
         except Exception as e:
             return jsonify({'error': f'Invalid URL format: {str(e)}'}), 400
         
-        # Try to connect to target (timeout 5s)
-        # Don't log technical details - frontend will show user-friendly messages
-        try:
-            response = requests.get(target, timeout=5, allow_redirects=True, verify=False)
-            # Target is accessible, no need to log success
-        except requests.exceptions.ConnectionError as e:
-            error_detail = str(e).lower()
-            if 'nodename nor servname provided' in error_detail or 'name or service not known' in error_detail or 'no such host' in error_detail:
+        # Try to connect to target (timeout 5s) - only if validation not skipped
+        if not skip_validation:
+            try:
+                web_logger.info(f"🔍 Validating target: {target}")
+                response = requests.get(target, timeout=5, allow_redirects=True, verify=False)
+                web_logger.info(f"✅ Target is accessible (Status: {response.status_code})")
+            except requests.exceptions.ConnectionError as e:
+                error_detail = str(e).lower()
+                if 'nodename nor servname provided' in error_detail or 'name or service not known' in error_detail or 'no such host' in error_detail:
+                    web_logger.warning(f"⚠️ DNS resolution failed for {parsed.netloc}")
+                    return jsonify({
+                        'error': f'Cannot resolve domain: "{parsed.netloc}". Please check the domain name or enable "Skip Validation" if target is temporarily unavailable.',
+                        'suggestion': 'Enable "Skip Target Validation" in Scan Config tab to bypass this check.'
+                    }), 400
+                else:
+                    web_logger.warning(f"⚠️ Connection failed to {target}: {str(e)[:100]}")
+                    return jsonify({
+                        'error': f'Cannot connect to target: {target}. The server might be offline or behind a firewall.',
+                        'suggestion': 'Enable "Skip Target Validation" in Scan Config tab if you want to proceed anyway.'
+                    }), 400
+            except requests.exceptions.Timeout:
+                web_logger.warning(f"⚠️ Connection timeout to {target}")
                 return jsonify({
-                    'error': f'Cannot connect to target: The domain "{parsed.netloc}" does not exist or cannot be found.'
+                    'error': f'Connection timeout: {target} is not responding within 5 seconds.',
+                    'suggestion': 'Enable "Skip Target Validation" to bypass this check, or check if target is accessible.'
                 }), 400
-            else:
+            except requests.exceptions.SSLError as e:
+                # SSL errors are warnings, allow scan to continue
+                web_logger.warning(f"⚠️ SSL error (continuing anyway): {str(e)[:100]}")
+            except requests.exceptions.TooManyRedirects:
+                web_logger.warning(f"⚠️ Too many redirects for {target}")
                 return jsonify({
-                    'error': f'Cannot connect to target: {target}. The server might be offline or unreachable.'
+                    'error': f'Too many redirects when connecting to {target}.',
+                    'suggestion': 'The server configuration might be incorrect. Enable "Skip Target Validation" to proceed.'
                 }), 400
-        except requests.exceptions.Timeout:
-            return jsonify({
-                'error': f'Connection timeout: {target} is not responding. The server might be slow or offline.'
-            }), 400
-        except requests.exceptions.SSLError as e:
-            # SSL errors are warnings, allow scan to continue
-            pass
-        except requests.exceptions.TooManyRedirects:
-            return jsonify({
-                'error': f'Too many redirects when connecting to {target}. The server configuration might be incorrect.'
-            }), 400
-        except requests.exceptions.RequestException as e:
-            error_msg = str(e)
-            return jsonify({
-                'error': f'Failed to connect to target: {error_msg}'
-            }), 400
+            except requests.exceptions.RequestException as e:
+                web_logger.warning(f"⚠️ Request failed: {str(e)[:100]}")
+                return jsonify({
+                    'error': f'Failed to validate target: {str(e)[:200]}',
+                    'suggestion': 'Enable "Skip Target Validation" in Scan Config tab to bypass this check.'
+                }), 400
+        else:
+            web_logger.info(f"⏭️ Skipping target validation (user requested)")
     
     # Reset state (thread-safe)
     with scan_state_lock:
@@ -664,15 +940,19 @@ def run_scan(config: ToolkitConfig):
         
         # Final phase
         update_progress('Scan Complete', 100)
+        web_logger.info(f"✅ Scan completed successfully! Found {len(scan_state['findings'])} findings")
+        
         # Notify frontend that scan is complete so UI can stop timers and finalize state
         try:
+            web_logger.info("📤 Emitting scan_complete event to frontend...")
             socketio.emit('scan_complete', {
                 'message': 'Scan completed successfully',
                 'findings': len(scan_state.get('findings', []))
-            }, broadcast=True)
-        except Exception:
-            pass
-        web_logger.info(f"✅ Scan completed successfully! Found {len(scan_state['findings'])} findings")
+            }, namespace='/')
+            socketio.sleep(0.1)  # Give time for event to be sent
+            web_logger.info("✅ scan_complete event emitted successfully")
+        except Exception as e:
+            web_logger.error(f"❌ Failed to emit scan_complete: {e}")
         
     except Exception as e:
         import traceback
@@ -682,12 +962,15 @@ def run_scan(config: ToolkitConfig):
         update_progress('Scan Failed', scan_state.get('progress', 0))
         # Notify frontend about the error so UI can stop timers and show error state
         try:
+            web_logger.info("📤 Emitting scan_error event to frontend...")
             socketio.emit('scan_error', {
                 'message': str(e),
                 'details': error_detail
-            }, broadcast=True)
-        except Exception:
-            pass
+            }, namespace='/')
+            socketio.sleep(0.1)  # Give time for event to be sent
+            web_logger.info("✅ scan_error event emitted successfully")
+        except Exception as emit_err:
+            web_logger.error(f"❌ Failed to emit scan_error: {emit_err}")
     finally:
         # Always reset state when scan ends (thread-safe)
         with scan_state_lock:
@@ -699,6 +982,17 @@ def run_scan(config: ToolkitConfig):
 def run_focused_ssrf_testing(config: ToolkitConfig, db: FindingDatabase, har_data: dict):
     """Run focused SSRF testing on specific requests from Burp Suite/HAR file"""
     web_logger.info("🎯 Starting Focused SSRF Testing on specific endpoints")
+    
+    web_logger.warning("⚠️  IMPORTANT: HAR/Burp file testing mode")
+    web_logger.warning("    • Tool will RE-SEND requests TO target with SSRF payloads")
+    web_logger.warning("    • Target server should call BACK to our callback server")
+    web_logger.warning("")
+    web_logger.warning("📍 Callback IP Interpretation:")
+    web_logger.warning("    • Callback from 127.0.0.1/::1 = ⚠️ LOCAL (testing your machine)")
+    web_logger.warning("    • Callback from OTHER IP = ✅ REMOTE (real target server)")
+    web_logger.warning("")
+    web_logger.warning("🔍 Check console output for 'CALLBACK RECEIVED!' messages")
+    web_logger.warning("━" * 60)
     
     # Initialize callback server for SSRF testing
     callback_server = get_or_create_callback_server(port=8888)
@@ -1020,6 +1314,15 @@ def run_focused_ssrf_testing(config: ToolkitConfig, db: FindingDatabase, har_dat
                                             db.add_finding(finding)
                                             web_logger.info(f"    💾 Finding saved to database")
                                             
+                                            # Determine test type based on body content
+                                            test_type = 'api_json_post' if method.upper() == 'POST' else 'api_get_param'
+                                            if 'application/json' in headers.get('content-type', '').lower():
+                                                test_type = 'api_json_post'
+                                            elif 'application/x-www-form-urlencoded' in headers.get('content-type', '').lower():
+                                                test_type = 'api_form_post'
+                                            elif method.upper() == 'GET':
+                                                test_type = 'api_get_param'
+                                            
                                             # Emit detailed finding to UI via SocketIO
                                             add_finding({
                                                 'severity': severity,
@@ -1029,6 +1332,8 @@ def run_focused_ssrf_testing(config: ToolkitConfig, db: FindingDatabase, har_dat
                                                 'affected_url': url,
                                                 'method': method,
                                                 'parameter': param_name,
+                                                'test_type': test_type,  # NEW: Explicitly show test type
+                                                'source': 'javascript',  # Source of test (from Burp/HAR analysis)
                                                 'original_value': original_value,
                                                 'payload': test_url,
                                                 'evidence': evidence_keywords_str,
@@ -1148,17 +1453,28 @@ def run_blackbox(config: ToolkitConfig, db: FindingDatabase):
             
             # Run full auto discovery and testing (với ngrok URL ưu tiên)
             web_logger.info("🚀 Starting comprehensive auto-discovery...")
+            
+            # ✅ Define callback function để emit tested endpoints to UI
+            def emit_tested_endpoint(endpoint_data):
+                """Callback to emit tested endpoint with real status and payload"""
+                web_logger.endpoint(endpoint_data)
+            
             auto_results = auto_disco.run_full_discovery(
                 callback_url=public_callback_base,  # ✅ Truyền ngrok URL vào!
-                callback_server=callback_server
+                callback_server=callback_server,
+                on_test_callback=emit_tested_endpoint  # ✅ Callback để emit endpoints khi test
             )
             
-            # Process results
-            discovered_endpoints = auto_results.get('endpoints', [])
-            testable_endpoints = auto_results.get('testable_endpoints', [])
+            # ✅ FIXED: Process results - use correct keys from auto_results
+            # auto_results structure: {'endpoints': Set, 'api_endpoints': Set, 'testable_endpoints': List, ...}
+            discovered_urls = auto_results.get('endpoints', set())  # Crawled URLs
+            api_endpoints = auto_results.get('api_endpoints', set())  # API endpoints (Set)
+            testable_endpoints = auto_results.get('testable_endpoints', [])  # List of testable endpoints
             ssrf_vulnerabilities = auto_results.get('ssrf_vulnerabilities', [])
             forms = auto_results.get('forms', [])
-            api_endpoints = auto_results.get('api_endpoints', [])
+            
+            # ✅ Merge both discovered and API endpoints for UI display
+            discovered_endpoints = list(discovered_urls.union(api_endpoints)) if isinstance(api_endpoints, set) else list(api_endpoints)
             
             web_logger.info(f"✅ Auto Discovery Complete!")
             web_logger.info(f"📊 Statistics:")
@@ -1180,24 +1496,16 @@ def run_blackbox(config: ToolkitConfig, db: FindingDatabase):
                 web_logger.info(f"     💥 Payload: {payload}")
                 web_logger.info(f"     📡 Callback received: {callback_received.get('path', 'N/A')}")
             
-            # Emit discovered endpoints to UI
-            for endpoint in discovered_endpoints:
-                web_logger.endpoint({
-                    'url': str(endpoint),
-                    'status_code': 200,
-                    'content_length': 0,
-                    'content_type': 'auto-discovered'
-                })
+            # ✅ NOTE: Endpoints sẽ được emit KHI TEST SSRF (không emit discovered endpoints nữa)
+            # Lý do: Để hiển thị status code THỰC TẾ và payload chi tiết
             
-            # Emit testable endpoints as findings
-            for testable in testable_endpoints:
-                endpoint_url = testable.get('url', '')
-                parameters = testable.get('parameters', [])
-                
-                if parameters:
-                    param_list = ', '.join(parameters)
-                    msg = f"🎯 Testable SSRF endpoint found: {endpoint_url} with parameters: {param_list}"
-                    web_logger.finding('MEDIUM', msg)
+            # Emit testable endpoints as findings (for reference)
+            web_logger.info(f"📋 Found {len(testable_endpoints)} testable endpoints")
+            for testable in testable_endpoints[:5]:  # Show first 5 as examples
+                endpoint_url = testable.get('endpoint', '')
+                param = testable.get('parameter', '')
+                msg = f"   • {endpoint_url} → {param}"
+                web_logger.info(msg)
             
             update_progress('Auto Discovery Complete', 70)
             
@@ -1265,142 +1573,172 @@ def run_blackbox(config: ToolkitConfig, db: FindingDatabase):
             # Fall back to manual mode
             web_logger.info("⚠️ Falling back to manual discovery mode...")
     
-    # Check if HAR data is available (Manual Mode)
-    har_data = get_scan_state_value('har_data')
-    endpoint_source = get_scan_state_value('endpoint_source', 'file')  # 'file', 'url', or 'both'
+    # ========================================================================
+    # PRIORITY CHECK: Detect if target is a specific API endpoint
+    # If detected, skip ALL discovery and test directly
+    # ========================================================================
+    from urllib.parse import urlparse
+    parsed_target = urlparse(target_url)
+    is_specific_endpoint = (
+        '/api/' in parsed_target.path or 
+        len(parsed_target.path.split('/')) > 3 or  # Has multiple path segments
+        parsed_target.path.endswith(('/', '.json', '.xml'))
+    )
     
-    # Determine which endpoints to use based on endpoint_source
-    if har_data and endpoint_source in ['file', 'both']:
-        # Phase 1: Extract Endpoints from Traffic Capture (Burp Suite or HAR)
-        update_progress('Extracting Endpoints from Traffic Capture', 10)
-        source = har_data.get('source', 'Traffic Capture')
-        web_logger.info(f"📁 Phase 1: Extracting Endpoints from {source}")
-        web_logger.info(f"📊 Stats: {har_data['stats']['total_requests']} requests, {har_data['stats']['unique_endpoints']} endpoints")
-        
-        # Log authenticated requests
-        auth_count = har_data['stats']['authenticated_requests']
-        if auth_count > 0:
-            web_logger.info(f"🔐 Found {auth_count} authenticated requests (with JWT/cookies)")
-        
-        # Extract all unique URLs from capture
-        for req in har_data['requests']:
-            url = req['url']
-            if url not in discovered_endpoints:
-                discovered_endpoints.append(url)
-                
-                # Emit endpoint to UI
-                web_logger.endpoint({
-                    'url': url,
-                    'status_code': 200,  # From capture, so it was successful
-                    'content_length': len(str(req.get('post_data', ''))),
-                    'content_type': req['headers'].get('Content-Type', 'unknown')
-                })
-                
-                # Show method and auth info
-                method = req.get('method', 'GET')
-                log_msg = f"  ✓ {method} {url}"
-                
-                # Highlight if authenticated
-                if 'Authorization' in req.get('headers', {}):
-                    auth_header = req['headers']['Authorization']
-                    if 'Bearer' in auth_header:
-                        token_preview = auth_header.split('Bearer ')[-1][:40]
-                        log_msg += f" 🔐 [JWT: {token_preview}...]"
-                    else:
-                        log_msg += f" 🔐 [Auth: {auth_header[:30]}...]"
-                elif 'Cookie' in req.get('headers', {}):
-                    log_msg += " 🍪 [Has Cookies]"
-                
-                web_logger.info(log_msg)
-        
-        web_logger.info(f"✅ Extracted {len(discovered_endpoints)} unique endpoints from {source}")
-        update_progress('Traffic Capture Extraction Complete', 20)
-    
-    # Also discover from URL if requested ('url' or 'both')
-    if (not har_data and config.blackbox.endpoint_discovery) or (har_data and endpoint_source in ['url', 'both']):
-        # Phase: Comprehensive Endpoint Discovery from URL
-        if endpoint_source == 'both':
-            update_progress('Additional Discovery from URL', 25)
-            web_logger.info("🔍 Phase: Additional Endpoint Discovery from URL")
-        else:
-            update_progress('Endpoint Discovery', 10)
-            web_logger.info("📡 Phase 1: Comprehensive Endpoint Discovery")
-        web_logger.info(f"🎯 Target: {target_url}")
-        
-        try:
-            # Use Enhanced Endpoint Discovery V2
-            discovery = EndpointDiscoveryV2(
-                target_url, 
-                timeout=config.blackbox.timeout,
-                max_workers=3,
-                rate_limit=2.0
-            )
-            
-            # Use comprehensive discovery (robots.txt, sitemap, wordlist, javascript)
-            endpoint_results = discovery.discover_comprehensive()
-            
-            # Extract URLs from V2 discovery results and emit to UI
-            for result in endpoint_results:
-                # Avoid duplicates when merging file + url discovery
-                if result.url not in discovered_endpoints:
-                    discovered_endpoints.append(result.url)
-                    web_logger.info(f"  ✓ {result.url} [{result.status_code}] - {result.severity.upper()}")
-                    
-                    # Emit enhanced endpoint info to UI
-                    web_logger.endpoint({
-                        'url': result.url,
-                        'status_code': result.status_code,
-                        'content_length': result.content_length,
-                        'content_type': result.content_type,
-                        'severity': result.severity,
-                        'source': result.source,
-                        'accepts_post': result.accepts_post,
-                        'ssrf_potential': result.ssrf_potential,
-                        'response_time': result.response_time
-                    })
-            
-            # Get discovery summary
-            summary = discovery.get_summary()
-            web_logger.info(f"📊 Discovery Summary:")
-            web_logger.info(f"   Total endpoints: {summary['total_endpoints']}")
-            web_logger.info(f"   Severity breakdown: {summary['severity_breakdown']}")
-            web_logger.info(f"   Success rate: {summary['statistics']['successful_requests']}/{summary['statistics']['total_requests']}")
-            
-            if endpoint_source == 'both':
-                web_logger.info(f"✅ Total endpoints: {len(discovered_endpoints)} (File + URL discovery)")
-            else:
-                web_logger.info(f"✅ Discovered {len(discovered_endpoints)} unique endpoints")
-            
-            # If no endpoints found, use base URL
-            if not discovered_endpoints:
-                web_logger.info("ℹ️ No endpoints found, will test base URL")
-                discovered_endpoints = [target_url]
-        except Exception as e:
-            web_logger.warning(f"⚠️ Endpoint discovery failed: {str(e)}")
-            import traceback
-            web_logger.error(traceback.format_exc())
-            web_logger.info("ℹ️ Proceeding with target URL directly")
-            discovered_endpoints = [target_url]
-        
-        update_progress('Endpoint Discovery Complete', 20)
-    elif not har_data or endpoint_source == 'url':
-        # Skip discovery if we're using file-only and not in discovery mode
-        if not config.blackbox.endpoint_discovery and not har_data:
-            # Skip discovery, just use target URL
-            web_logger.info("ℹ️ Endpoint discovery disabled, using target URL directly")
-            discovered_endpoints = [target_url]
-    
-    # Fallback if no endpoints discovered
-    if not discovered_endpoints:
-        web_logger.info("ℹ️ No endpoints found, using target URL as fallback")
+    if is_specific_endpoint:
+        web_logger.info("🎯 Detected specific API endpoint - skipping ALL discovery, testing directly")
+        web_logger.info(f"   Target: {target_url}")
         discovered_endpoints = [target_url]
+        update_progress('Direct API Testing', 20)
+        # Jump directly to parameter fuzzing - skip all discovery logic below
+        web_logger.info(f"📋 Testing 1 endpoint directly")
+        web_logger.info(f"  • {target_url}")
+    else:
+        # NOT a specific endpoint - run normal discovery flow
+        web_logger.info("📡 Standard mode - will run endpoint discovery")
+        
+        # Check if HAR data is available (Manual Mode)
+        har_data = get_scan_state_value('har_data')
+        endpoint_source = get_scan_state_value('endpoint_source', 'file')  # 'file', 'url', or 'both'
+        
+        # Determine which endpoints to use based on endpoint_source
+        if har_data and endpoint_source in ['file', 'both']:
+            # Phase 1: Extract Endpoints from Traffic Capture (Burp Suite or HAR)
+            update_progress('Extracting Endpoints from Traffic Capture', 10)
+            source = har_data.get('source', 'Traffic Capture')
+            web_logger.info(f"📁 Phase 1: Extracting Endpoints from {source}")
+            web_logger.info(f"📊 Stats: {har_data['stats']['total_requests']} requests, {har_data['stats']['unique_endpoints']} endpoints")
+            
+            # Log authenticated requests
+            auth_count = har_data['stats']['authenticated_requests']
+            if auth_count > 0:
+                web_logger.info(f"🔐 Found {auth_count} authenticated requests (with JWT/cookies)")
+            
+            # Extract all unique URLs from capture
+            for req in har_data['requests']:
+                url = req['url']
+                if url not in discovered_endpoints:
+                    discovered_endpoints.append(url)
+                    
+                    # Emit endpoint to UI
+                    web_logger.endpoint({
+                        'url': url,
+                        'status_code': 200,  # From capture, so it was successful
+                        'content_length': len(str(req.get('post_data', ''))),
+                        'content_type': req['headers'].get('Content-Type', 'unknown')
+                    })
+                    
+                    # Show method and auth info
+                    method = req.get('method', 'GET')
+                    log_msg = f"  ✓ {method} {url}"
+                    
+                    # Highlight if authenticated
+                    if 'Authorization' in req.get('headers', {}):
+                        auth_header = req['headers']['Authorization']
+                        if 'Bearer' in auth_header:
+                            token_preview = auth_header.split('Bearer ')[-1][:40]
+                            log_msg += f" 🔐 [JWT: {token_preview}...]"
+                        else:
+                            log_msg += f" 🔐 [Auth: {auth_header[:30]}...]"
+                    elif 'Cookie' in req.get('headers', {}):
+                        log_msg += " 🍪 [Has Cookies]"
+                    
+                    web_logger.info(log_msg)
+            
+            web_logger.info(f"✅ Extracted {len(discovered_endpoints)} unique endpoints from {source}")
+            update_progress('Traffic Capture Extraction Complete', 20)
+        
+        # Also discover from URL if requested ('url' or 'both')
+        if (endpoint_source in ['url', 'both']) or (not har_data and config.blackbox.endpoint_discovery):
+            # Phase: Comprehensive Endpoint Discovery from URL
+            if endpoint_source == 'both':
+                update_progress('Additional Discovery from URL', 25)
+                web_logger.info("🔍 Phase: Additional Endpoint Discovery from URL")
+            else:
+                update_progress('Endpoint Discovery', 10)
+                web_logger.info("📡 Phase 1: Comprehensive Endpoint Discovery")
+            web_logger.info(f"🎯 Target: {target_url}")
+            
+            try:
+                # Use Enhanced Endpoint Discovery V2
+                discovery = EndpointDiscoveryV2(
+                    target_url, 
+                    timeout=config.blackbox.timeout,
+                    max_workers=3,
+                    rate_limit=2.0
+                )
+                
+                # Use comprehensive discovery (robots.txt, sitemap, wordlist, javascript)
+                endpoint_results = discovery.discover_comprehensive()
+                
+                # Extract URLs from V2 discovery results and emit to UI
+                for result in endpoint_results:
+                    # Avoid duplicates when merging file + url discovery
+                    if result.url not in discovered_endpoints:
+                        discovered_endpoints.append(result.url)
+                        web_logger.info(f"  ✓ {result.url} [{result.status_code}] - {result.severity.upper()}")
+                        
+                        # Emit enhanced endpoint info to UI
+                        web_logger.endpoint({
+                            'url': result.url,
+                            'status_code': result.status_code,
+                            'content_length': result.content_length,
+                            'content_type': result.content_type,
+                            'severity': result.severity,
+                            'source': result.source,
+                            'accepts_post': result.accepts_post,
+                            'ssrf_potential': result.ssrf_potential,
+                            'response_time': result.response_time
+                        })
+                
+                # Get discovery summary
+                summary = discovery.get_summary()
+                web_logger.info(f"📊 Discovery Summary:")
+                web_logger.info(f"   Total endpoints: {summary['total_endpoints']}")
+                web_logger.info(f"   Severity breakdown: {summary['severity_breakdown']}")
+                web_logger.info(f"   Success rate: {summary['statistics']['successful_requests']}/{summary['statistics']['total_requests']}")
+                
+                if endpoint_source == 'both':
+                    web_logger.info(f"✅ Total endpoints: {len(discovered_endpoints)} (File + URL discovery)")
+                else:
+                    web_logger.info(f"✅ Discovered {len(discovered_endpoints)} unique endpoints")
+                
+                # If no endpoints found, use original target URL (with full path)
+                if not discovered_endpoints:
+                    web_logger.info("ℹ️ No endpoints found, will test target URL directly")
+                    discovered_endpoints = [target_url]
+            except Exception as e:
+                web_logger.warning(f"⚠️ Endpoint discovery failed: {str(e)}")
+                import traceback
+                web_logger.error(traceback.format_exc())
+                web_logger.info("ℹ️ Proceeding with target URL directly")
+                discovered_endpoints = [target_url]
+            
+            update_progress('Endpoint Discovery Complete', 20)
+        elif not har_data or endpoint_source == 'url':
+            # Skip discovery if we're using file-only and not in discovery mode
+            if not config.blackbox.endpoint_discovery and not har_data:
+                # Skip discovery, just use target URL
+                web_logger.info("ℹ️ Endpoint discovery disabled, using target URL directly")
+                discovered_endpoints = [target_url]
+            
+            # Fallback if no endpoints discovered
+            if not discovered_endpoints:
+                web_logger.info("ℹ️ No endpoints found, using target URL as fallback")
+                discovered_endpoints = [target_url]
+        
+        # Filter endpoints if custom selection provided
+        custom_endpoints = get_scan_state_value('custom_endpoints')
+        if custom_endpoints:
+            original_count = len(discovered_endpoints)
+            discovered_endpoints = [e for e in discovered_endpoints if e in custom_endpoints]
+            web_logger.info(f"🎯 Filtered to {len(discovered_endpoints)} selected endpoints (from {original_count})")
+        
+        web_logger.info(f"📋 Testing {len(discovered_endpoints)} endpoint(s)")
+        for ep in discovered_endpoints:
+            web_logger.info(f"  • {ep}")
     
-    # Filter endpoints if custom selection provided
-    custom_endpoints = get_scan_state_value('custom_endpoints')
-    if custom_endpoints:
-        original_count = len(discovered_endpoints)
-        discovered_endpoints = [e for e in discovered_endpoints if e in custom_endpoints]
-        web_logger.info(f"🎯 Filtered to {len(discovered_endpoints)} selected endpoints (from {original_count})")
+    # END OF DISCOVERY LOGIC - Continue with fuzzing for both specific and discovered endpoints
     
     # Phase 2: Parameter Fuzzing on ALL discovered endpoints
     if config.blackbox.parameter_fuzzing:
@@ -1412,7 +1750,7 @@ def run_blackbox(config: ToolkitConfig, db: FindingDatabase):
         custom_payloads = get_scan_state_value('custom_payloads')
         
         fuzzer = ParameterFuzzer(
-            timeout=config.blackbox.timeout,
+            timeout=5,  # Reduced from 10s to 5s for faster scanning
             custom_params=custom_params,
             custom_payloads=custom_payloads
         )
@@ -1455,9 +1793,14 @@ def run_blackbox(config: ToolkitConfig, db: FindingDatabase):
                 web_logger.info(f"ℹ️ Noise filtered: {param} (confidence: {confidence:.2f})")
         
         update_progress('Parameter Fuzzing Complete', 45)
+    else:
+        web_logger.info("⏭️ Parameter fuzzing disabled - will test endpoints directly with SSRF payloads")
+        update_progress('Parameter Fuzzing Skipped', 45)
     
-    # Phase 3: Callback Testing
-    if config.blackbox.external_callback_test and len(fuzz_results) > 0:
+    # Phase 3: Callback Testing - TEST EVEN WITHOUT FUZZING!
+    # If parameter fuzzing found suspicious params, test those
+    # Otherwise, test common SSRF parameters on discovered endpoints
+    if config.blackbox.external_callback_test:
         update_progress('Callback Testing', 50)
         web_logger.info("📞 Phase 3: External Callback Testing")
         
@@ -1467,25 +1810,176 @@ def run_blackbox(config: ToolkitConfig, db: FindingDatabase):
         
         detector = ExternalCallbackDetector(callback_server)
         
-        # Test ALL suspicious parameters, not just high confidence ones
-        for idx, result in enumerate(fuzz_results):
-            web_logger.info(f"[{idx+1}/{len(fuzz_results)}] Testing callback for parameter: {result['parameter']} at {result['url']}")
-            
-            try:
-                callback_result = detector.test_ssrf(
-                    target_url=result['url'],  # Use the endpoint URL where parameter was found
-                    parameter=result['parameter'],
-                    timeout=10
-                )
+        # CASE 1: If we have fuzz results, test those parameters
+        if len(fuzz_results) > 0:
+            web_logger.info(f"🎯 Testing {len(fuzz_results)} parameters found by fuzzer")
+            for idx, result in enumerate(fuzz_results):
+                web_logger.info(f"[{idx+1}/{len(fuzz_results)}] Testing callback for parameter: {result['parameter']} at {result['url']}")
                 
-                if callback_result['is_vulnerable']:
-                    web_logger.finding('CRITICAL',
-                        f"✅ CONFIRMED SSRF via {result['parameter']} at {result['url']} - Received {callback_result['callbacks_received']} callbacks"
+                try:
+                    # 🆕 Detect supported methods first
+                    method_info = detector.detect_endpoint_methods(result['url'], timeout=5)
+                    supported_methods = method_info['supported_methods']
+                    web_logger.info(f"   Detected methods: {', '.join(supported_methods)}")
+                    
+                    # Test with appropriate method
+                    test_method = 'POST' if 'POST' in supported_methods else supported_methods[0]
+                    
+                    callback_result = detector.test_ssrf(
+                        target_url=result['url'],
+                        parameter=result['parameter'],
+                        method=test_method,
+                        timeout=10
                     )
-                else:
-                    web_logger.info(f"❌ No callback received for {result['parameter']}")
-            except Exception as e:
-                web_logger.error(f"Error testing {result['parameter']}: {str(e)}")
+                    
+                    if callback_result['is_vulnerable']:
+                        web_logger.finding('CRITICAL',
+                            f"✅ CONFIRMED SSRF via {result['parameter']} at {result['url']} - Received {callback_result['callbacks_received']} callbacks"
+                        )
+                    else:
+                        web_logger.info(f"❌ No callback received for {result['parameter']}")
+                except Exception as e:
+                    web_logger.error(f"Error testing {result['parameter']}: {str(e)}")
+        
+        # CASE 2: No fuzzing or no results - test common parameters on all endpoints
+        else:
+            web_logger.info(f"🎯 Testing common SSRF parameters on {len(discovered_endpoints)} endpoint(s)")
+            common_params = ['url', 'uri', 'callback', 'callback_url', 'webhook', 'redirect', 'fetch', 'load', 'review_url']
+            
+            for endpoint_url in discovered_endpoints:
+                web_logger.info(f"🔍 Testing endpoint: {endpoint_url}")
+                
+                # 🆕 Step 1: Detect supported methods
+                try:
+                    method_info = detector.detect_endpoint_methods(endpoint_url, timeout=5)
+                    supported_methods = method_info['supported_methods']
+                    content_type = method_info['content_type']
+                    web_logger.info(f"   Supported methods: {', '.join(supported_methods)}")
+                    web_logger.info(f"   Content-Type: {content_type}")
+                except Exception as e:
+                    web_logger.warning(f"   Method detection failed: {e}, assuming GET+POST")
+                    supported_methods = ['GET', 'POST']
+                
+                # 🆕 Step 2: Test callback-based SSRF
+                for param in common_params:
+                    try:
+                        # Use POST if supported, otherwise GET
+                        test_method = 'POST' if 'POST' in supported_methods else supported_methods[0]
+                        
+                        web_logger.info(f"   Testing {test_method} parameter: {param}")
+                        callback_result = detector.test_ssrf(
+                            target_url=endpoint_url,
+                            parameter=param,
+                            method=test_method,
+                            timeout=10
+                        )
+                        
+                        if callback_result['is_vulnerable']:
+                            web_logger.finding('CRITICAL',
+                                f"✅ CONFIRMED SSRF via {param} at {endpoint_url} - Received {callback_result['callbacks_received']} callbacks"
+                            )
+                            
+                            # Add to fuzz_results for internal scanning phase
+                            fuzz_results.append({
+                                'parameter': param,
+                                'url': endpoint_url,
+                                'method': test_method,
+                                'is_vulnerable': True
+                            })
+                        else:
+                            web_logger.info(f"❌ No callback received for {param}")
+                    except Exception as e:
+                        web_logger.error(f"Error testing {param}: {str(e)}")
+                
+                # 🆕 Step 3: Test cloud metadata SSRF (NEW!)
+                web_logger.info(f"   ☁️  Testing cloud metadata endpoints...")
+                try:
+                    test_method = 'POST' if 'POST' in supported_methods else supported_methods[0]
+                    
+                    # Test ALL parameters, not just the first one
+                    cloud_vulnerable = False
+                    for param in common_params:
+                        cloud_result = detector.test_cloud_metadata(
+                            target_url=endpoint_url,
+                            parameter=param,
+                            method=test_method,
+                            timeout=10
+                        )
+                        
+                        if cloud_result['is_vulnerable']:
+                            cloud_vulnerable = True
+                            
+                            # Extract detailed information from results
+                            vulnerable_results = [r for r in cloud_result.get('results', []) if r.get('is_vulnerable', False)]
+                            if not vulnerable_results:
+                                continue  # Skip if no vulnerable results
+                            
+                            vulnerable_payload = vulnerable_results[0]  # Get first vulnerable result
+                            payload_url = vulnerable_payload.get('payload_url', '')
+                            indicators = vulnerable_payload.get('found_indicators', [])
+                            response_preview = vulnerable_payload.get('response_preview', '')
+                            cloud_providers = ', '.join(cloud_result.get('vulnerable_clouds', []))
+                            
+                            # Create detailed finding
+                            poc_json = '{"%s": "%s"}' % (param, payload_url)
+                            finding_details = {
+                                'title': '☁️ Cloud Metadata SSRF Vulnerability',
+                                'severity': 'CRITICAL',
+                                'category': 'SSRF',
+                                'cwe_id': 'CWE-918',
+                                'cvss_score': '9.8',
+                                'affected_url': endpoint_url,
+                                'parameter': param,
+                                'method': test_method,
+                                'payload': payload_url,
+                                'cloud_provider': cloud_providers,
+                                'indicators_found': ', '.join(indicators) if indicators else 'N/A',
+                                'description': f'Server-Side Request Forgery (SSRF) vulnerability detected. The endpoint fetches cloud metadata from {cloud_providers} at {payload_url}. Found indicators: {", ".join(indicators) if indicators else "N/A"}',
+                                'evidence': response_preview[:500] if response_preview else 'No response preview available',
+                                'proof_of_concept': f'''# Cloud Metadata SSRF - {cloud_providers}
+curl -X {test_method} '{endpoint_url}' \\
+  -H 'Content-Type: application/json' \\
+  -H 'Authorization: Bearer <your-token>' \\
+  -d '{poc_json}'
+
+# Expected Response:
+# The server will fetch and return cloud metadata containing:
+# {", ".join(indicators) if indicators else "N/A"}
+''',
+                                'remediation': '''1. Validate and whitelist allowed URLs/domains
+2. Block requests to private IP ranges (RFC 1918)
+3. Block cloud metadata endpoints (169.254.169.254, metadata.google.internal)
+4. Implement proper input validation
+5. Use allow-lists instead of deny-lists''',
+                                'references': [
+                                    'https://owasp.org/www-community/attacks/Server_Side_Request_Forgery',
+                                    'https://portswigger.net/web-security/ssrf',
+                                    'https://cwe.mitre.org/data/definitions/918.html'
+                                ],
+                                'timestamp': datetime.now().isoformat()
+                            }
+                            
+                            # Log and emit finding
+                            web_logger.logger.info(f"[CRITICAL] {finding_details['description']}")
+                            web_logger._emit_log('finding', finding_details['description'], 'CRITICAL')
+                            add_finding(finding_details)
+                            
+                            # Add to fuzz_results
+                            fuzz_results.append({
+                                'parameter': param,
+                                'url': endpoint_url,
+                                'method': test_method,
+                                'payload': payload_url,
+                                'is_vulnerable': True,
+                                'vulnerability_type': 'SSRF - Cloud Metadata',
+                                'severity': 'CRITICAL'
+                            })
+                            break  # Found vulnerable parameter, stop testing
+                    
+                    if not cloud_vulnerable:
+                        web_logger.info(f"   ❌ No cloud metadata SSRF detected")
+                except Exception as e:
+                    web_logger.error(f"   Error testing cloud metadata: {str(e)}")
         
         update_progress('Callback Testing Complete', 65)
     
@@ -1524,9 +2018,50 @@ def run_blackbox(config: ToolkitConfig, db: FindingDatabase):
                 web_logger.info(f"🎯 Discovered {len(services)} internal services")
                 
                 for service in services:
-                    web_logger.finding('HIGH',
-                        f"Internal service accessible: {service['host']}:{service['port']} - {service['service']}"
-                    )
+                    # Create detailed finding for each internal service
+                    service_finding = {
+                        'title': f'🌐 Internal Service Accessible via SSRF',
+                        'severity': 'HIGH',
+                        'category': 'SSRF - Internal Service Discovery',
+                        'cwe_id': 'CWE-918',
+                        'cvss_score': '7.5',
+                        'affected_url': ssrf_url,
+                        'parameter': ssrf_param,
+                        'method': 'POST',
+                        'internal_host': service['host'],
+                        'internal_port': service['port'],
+                        'service_name': service['service'],
+                        'description': f"Internal service {service['service']} on {service['host']}:{service['port']} is accessible via SSRF vulnerability. Attacker can interact with internal infrastructure that should not be exposed.",
+                        'evidence': f"Service: {service['service']}\nHost: {service['host']}\nPort: {service['port']}\nAccessible: Yes",
+                        'proof_of_concept': f'''# Access internal service via SSRF
+curl -X POST '{ssrf_url}' \\
+  -H 'Content-Type: application/json' \\
+  -H 'Authorization: Bearer <your-token>' \\
+  -d '{{"{ssrf_param}": "http://{service['host']}:{service['port']}"}}'
+
+# This allows you to:
+# 1. Port scan internal network
+# 2. Access internal services (databases, admin panels, etc.)
+# 3. Bypass network security controls
+''',
+                        'remediation': '''1. Implement strict URL validation and whitelisting
+2. Block access to private IP ranges (RFC 1918, RFC 4193)
+3. Use network segmentation to isolate sensitive services
+4. Implement egress filtering
+5. Consider using a proxy for external requests''',
+                        'references': [
+                            'https://owasp.org/www-community/attacks/Server_Side_Request_Forgery',
+                            'https://portswigger.net/web-security/ssrf',
+                            'https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html'
+                        ],
+                        'timestamp': datetime.now().isoformat()
+                    }
+                    
+                    # Log and save finding
+                    web_logger.logger.info(f"[HIGH] Internal service accessible: {service['host']}:{service['port']} - {service['service']}")
+                    web_logger._emit_log('finding', f"Internal service accessible: {service['host']}:{service['port']} - {service['service']}", 'HIGH')
+                    add_finding(service_finding)
+                    
             except Exception as e:
                 web_logger.warning(f"Internal scanning failed: {str(e)}")
         
@@ -1609,6 +2144,23 @@ if __name__ == '__main__':
     
     print("🚀 Starting Microservice SSRF Pentest Toolkit Web UI")
     print("📊 Dashboard: http://localhost:5000")
+    
+    # ✅ Debug: Show callback URL configuration (priority order)
+    callback_url = os.environ.get('CALLBACK_URL')
+    ngrok_url = os.environ.get('NGROK_URL')
+    
+    if callback_url:
+        print(f"✅ CALLBACK_URL detected (vĩnh viễn domain - PRIORITY 1): {callback_url}")
+        print(f"   → This will be used for SSRF testing (highest priority)")
+    elif ngrok_url:
+        print(f"✅ NGROK_URL detected (auto-detect - PRIORITY 2): {ngrok_url}")
+        print(f"   → This will be used for SSRF testing")
+    else:
+        print("⚠️ No CALLBACK_URL or NGROK_URL found")
+        print("   → Will use localhost (target will call itself - not real SSRF)")
+        print("   → Set CALLBACK_URL in .env file or start ngrok for real testing")
+    
+    print("=" * 60)
     
     # NOTE: Callback server is now standalone (tools/callback_server.py)
     # It should be started separately via run_with_ngrok_and_app.ps1

@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Graybox SSRF Scan</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f5f7fa;
+            margin: 0;
+            padding: 0;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #f39c12 0%, #d68910 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .header h1 {
+            margin: 0;
+            font-size: 2em;
+        }
+        
+        .header .back-btn {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            text-decoration: none;
+            transition: all 0.3s;
+        }
+        
+        .header .back-btn:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        
+        .config-section {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+            margin-bottom: 20px;
+        }
+        
+        .config-section h3 {
+            margin-top: 0;
+            margin-bottom: 20px;
+            color: #333;
+            font-size: 1.4em;
+            border-bottom: 2px solid #f39c12;
+            padding-bottom: 10px;
+        }
+        
+        .form-group {
+            margin-bottom: 25px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #333;
+        }
+        
+        .form-group input[type="text"],
+        .form-group input[type="number"],
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1em;
+            transition: border-color 0.3s;
+        }
+        
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #f39c12;
+        }
+        
+        .checkbox-group {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 15px;
+        }
+        
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            padding: 12px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            transition: all 0.3s;
+        }
+        
+        .checkbox-item:hover {
+            background: #e9ecef;
+        }
+        
+        .checkbox-item input[type="checkbox"] {
+            margin-right: 10px;
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+        
+        .checkbox-item label {
+            margin: 0;
+            cursor: pointer;
+            font-weight: normal;
+        }
+        
+        .help-text {
+            font-size: 0.9em;
+            color: #666;
+            margin-top: 5px;
+        }
+        
+        .action-buttons {
+            display: flex;
+            gap: 15px;
+            margin-top: 30px;
+        }
+        
+        .btn {
+            padding: 15px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .btn-primary {
+            background: #f39c12;
+            color: white;
+            flex: 1;
+        }
+        
+        .btn-primary:hover {
+            background: #d68910;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(243, 156, 18, 0.3);
+        }
+        
+        .btn-secondary {
+            background: #95a5a6;
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            background: #7f8c8d;
+        }
+        
+        .alert {
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .alert-info {
+            background: #d1ecf1;
+            border-left: 4px solid #17a2b8;
+            color: #0c5460;
+        }
+        
+        .alert-warning {
+            background: #fff3cd;
+            border-left: 4px solid #f39c12;
+            color: #856404;
+        }
+        
+        .two-columns {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        
+        @media (max-width: 768px) {
+            .two-columns {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🟡 Graybox SSRF Testing</h1>
+            <a href="/" class="back-btn">← Về Dashboard</a>
+        </div>
+        
+        <div class="alert alert-info">
+            💡 <strong>Graybox Mode:</strong> Sử dụng khi bạn có auth token hoặc quyền truy cập vào infrastructure (K8s/Consul/Docker). 
+            Độ chính xác cao hơn Blackbox nhờ service discovery.
+        </div>
+        
+        <div class="alert alert-warning">
+            ⚠️ <strong>Lưu ý:</strong> Nếu bạn đã cấu hình <code>CUSTOM_HEADERS</code> trong file <code>.env</code>, tool sẽ tự động sử dụng. 
+            Bạn không cần nhập lại Auth Token ở đây. Chỉ nhập nếu muốn override hoặc thêm headers mới.
+        </div>
+        
+        <form id="scanForm">
+            <!-- Target & Authentication -->
+            <div class="config-section">
+                <h3>🎯 Target & Authentication (TÙY CHỌN)</h3>
+                
+                <div class="form-group">
+                    <label>Target URL *</label>
+                    <input type="text" name="target" placeholder="https://api.example.com" required>
+                    <div class="help-text">URL của API hoặc gateway cần scan</div>
+                </div>
+                
+                <div class="alert alert-info" style="margin-bottom: 20px; font-size: 0.9em;">
+                    🔓 <strong>Authentication là TÙY CHỌN</strong><br>
+                    • Để trống nếu API public hoặc đã cấu hình trong .env<br>
+                    • Nhập nếu cần override hoặc test với token khác<br>
+                    • Tool sẽ dùng .env làm fallback nếu không có input
+                </div>
+                
+                <div class="two-columns">
+                    <div class="form-group">
+                        <label>Auth Token (JWT/Bearer) - Tùy chọn</label>
+                        <input type="text" name="auth_token" placeholder="Để trống nếu đã có trong .env">
+                        <div class="help-text">Override token trong .env (nếu cần)</div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Auth Header Name - Tùy chọn</label>
+                        <input type="text" name="auth_header" placeholder="Authorization" value="Authorization">
+                        <div class="help-text">Header name (mặc định: Authorization)</div>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label>API Keys (JSON format) - Tùy chọn</label>
+                    <textarea name="api_keys" rows="3" placeholder='{"x-api-key": "abc123"} - Chỉ nhập nếu cần thêm headers'></textarea>
+                    <div class="help-text">Headers bổ sung (JSON format) - để trống nếu không cần</div>
+                </div>
+            </div>
+            
+            <!-- Service Discovery -->
+            <div class="config-section">
+                <h3>🔍 Service Discovery</h3>
+                
+                <div class="alert alert-info">
+                    💡 Service Discovery giúp tự động phát hiện các microservices trong môi trường của bạn
+                </div>
+                
+                <div class="checkbox-group">
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="discover_kubernetes" name="discover_kubernetes">
+                        <label for="discover_kubernetes">Kubernetes Discovery</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="discover_consul" name="discover_consul">
+                        <label for="discover_consul">Consul Discovery</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="discover_docker" name="discover_docker">
+                        <label for="discover_docker">Docker Discovery</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="service_mesh" name="service_mesh">
+                        <label for="service_mesh">Service Mesh Detection</label>
+                    </div>
+                </div>
+                
+                <div class="two-columns" style="margin-top: 20px;">
+                    <div class="form-group">
+                        <label>Kubernetes Config Path</label>
+                        <input type="text" name="kubeconfig_path" placeholder="~/.kube/config">
+                        <div class="help-text">Path đến kubeconfig file</div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Consul Address</label>
+                        <input type="text" name="consul_address" placeholder="http://localhost:8500">
+                        <div class="help-text">Consul server address</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Target Selection -->
+            <div class="config-section">
+                <h3>🎯 Target Types</h3>
+                <div class="checkbox-group">
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="target_http" name="target_types" value="http" checked>
+                        <label for="target_http">HTTP Endpoints</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="target_internal" name="target_types" value="internal_service" checked>
+                        <label for="target_internal">Internal Services</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="target_cloud" name="target_types" value="cloud_metadata">
+                        <label for="target_cloud">Cloud Metadata</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="target_container" name="target_types" value="container_local" checked>
+                        <label for="target_container">Container Services</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="target_service_mesh" name="target_types" value="service_mesh">
+                        <label for="target_service_mesh">Service Mesh Endpoints</label>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Payload Strategy -->
+            <div class="config-section">
+                <h3>💣 Payload Strategy</h3>
+                
+                <div class="form-group">
+                    <label>Attack Depth</label>
+                    <select name="attack_depth">
+                        <option value="quick">Quick - Payload cơ bản (5-10 phút)</option>
+                        <option value="deep" selected>Deep - 500+ signatures (20-40 phút)</option>
+                        <option value="cloud">Cloud - Chuyên biệt cho AWS/GCP/Azure</option>
+                        <option value="container">Container - Chuyên biệt cho Docker/K8s</option>
+                    </select>
+                </div>
+                
+                <div class="checkbox-group">
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="payload_bypass" name="payload_strategies" value="url_bypass" checked>
+                        <label for="payload_bypass">URL Bypass</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="payload_protocol" name="payload_strategies" value="protocol_smuggling">
+                        <label for="payload_protocol">Protocol Smuggling</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="payload_redirect" name="payload_strategies" value="redirect_based">
+                        <label for="payload_redirect">Redirect-based SSRF</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="payload_header" name="payload_strategies" value="header_injection" checked>
+                        <label for="payload_header">Header Injection</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="payload_blind" name="payload_strategies" value="blind_ssrf" checked>
+                        <label for="payload_blind">Blind SSRF</label>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Scan Configuration -->
+            <div class="config-section">
+                <h3>⚙️ Scan Configuration</h3>
+                
+                <div class="two-columns">
+                    <div class="form-group">
+                        <label>Timeout (giây)</label>
+                        <input type="number" name="timeout" value="15" min="5" max="60">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Threads</label>
+                        <input type="number" name="threads" value="5" min="1" max="20">
+                    </div>
+                </div>
+                
+                <div class="checkbox-group">
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="param_fuzzing" name="scan_methods" value="parameters" checked>
+                        <label for="param_fuzzing">Parameter Fuzzing</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="header_fuzzing" name="scan_methods" value="headers" checked>
+                        <label for="header_fuzzing">Header Fuzzing</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="callback_test" name="scan_methods" value="callback" checked>
+                        <label for="callback_test">Callback Testing</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="internal_scan" name="scan_methods" value="internal" checked>
+                        <label for="internal_scan">Internal Network Scan</label>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Safe Mode -->
+            <div class="config-section">
+                <h3>🛡️ Safe Mode & Controls</h3>
+                
+                <div class="checkbox-group">
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="safe_mode" name="safe_mode" checked>
+                        <label for="safe_mode">Enable Safe Mode</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="disable_destructive" name="disable_destructive" checked>
+                        <label for="disable_destructive">Disable Destructive Payloads</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="scope_protection" name="scope_protection" checked>
+                        <label for="scope_protection">Scope Protection</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="skip_validation" name="skip_validation">
+                        <label for="skip_validation">Skip Target Validation</label>
+                    </div>
+                </div>
+                
+                <div class="two-columns" style="margin-top: 20px;">
+                    <div class="form-group">
+                        <label>Throttle (requests/second)</label>
+                        <input type="number" name="throttle_rps" value="3" min="1" max="10">
+                        <div class="help-text">Giới hạn số request/giây</div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Allowed Domains</label>
+                        <input type="text" name="allowed_domains" placeholder="example.com, *.internal">
+                        <div class="help-text">Chỉ scan các domain được phép</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="alert alert-warning">
+                ⚠️ <strong>Lưu ý:</strong> Graybox scan có thể truy cập internal services. Đảm bảo bạn có quyền scan môi trường này.
+            </div>
+            
+            <div class="action-buttons">
+                <button type="button" class="btn btn-secondary" onclick="window.location.href='/'">← Hủy</button>
+                <button type="submit" class="btn btn-primary" id="startScanBtn">🚀 Bắt đầu Graybox Scan</button>
+            </div>
+        </form>
+    </div>
+    
+    <script>
+        document.getElementById('scanForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            formData.append('mode', 'graybox');
+            
+            // Show loading
+            document.getElementById('startScanBtn').disabled = true;
+            document.getElementById('startScanBtn').textContent = '⏳ Đang khởi động scan...';
+            
+            fetch('/api/scan/start', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('✅ Scan đã bắt đầu! Chuyển đến trang Results để xem tiến trình.');
+                    window.location.href = '/results';
+                } else {
+                    alert('❌ Lỗi: ' + data.error);
+                    document.getElementById('startScanBtn').disabled = false;
+                    document.getElementById('startScanBtn').textContent = '🚀 Bắt đầu Graybox Scan';
+                }
+            })
+            .catch(error => {
+                alert('❌ Lỗi kết nối: ' + error);
+                document.getElementById('startScanBtn').disabled = false;
+                document.getElementById('startScanBtn').textContent = '🚀 Bắt đầu Graybox Scan';
+            });
+        });
+    </script>
+</body>
+</html>

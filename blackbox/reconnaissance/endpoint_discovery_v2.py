@@ -910,34 +910,34 @@ class EndpointDiscoveryV2:
         print("[+] Discovering endpoints from JavaScript...")
         
         try:
-            js_analyzer = JavaScriptAnalyzer(self.base_url, max_depth=2)
+            # ✅ FIX: JavaScriptAnalyzer constructor takes (target_url, session, logger)
+            js_analyzer = JavaScriptAnalyzer(self.base_url, self.session, self.logger)
             
-            # Get main page first
-            response = self._make_request(self.base_url)
-            if not response:
-                return []
-            
-            # Analyze JavaScript for endpoints
-            endpoints = js_analyzer.analyze_page(self.base_url, response.text, include_external)
+            # Call discover_from_javascript() directly - it handles page fetching internally
+            # Returns: Set[str] of endpoint URLs
+            js_endpoints = js_analyzer.discover_from_javascript()
             
             results = []
             
-            for endpoint_info in endpoints:
+            # ✅ FIX: js_endpoints is a Set[str], not list of dicts
+            for endpoint_url in js_endpoints:
                 # Create EndpointResult from JavaScript analysis
                 result = EndpointResult(
-                    url=endpoint_info['url'],
-                    status_code=200,  # Will be validated later
+                    url=endpoint_url,
+                    method='GET',  # Default method
+                    status_code=0,  # Will be validated
                     response_time=0.0,
                     content_length=0,
                     content_type='unknown',
-                    server_header='',
-                    severity=self._assess_severity(endpoint_info['url'], '', ''),
+                    server='',
+                    redirect_url=None,
+                    severity='unknown',
                     source='javascript',
-                    metadata={
-                        'extraction_method': endpoint_info.get('method', 'unknown'),
-                        'script_source': endpoint_info.get('source', 'inline'),
-                        'confidence': endpoint_info.get('confidence', 'medium')
-                    }
+                    parameters=[],
+                    headers={},
+                    accepts_post=False,
+                    post_params=[],
+                    ssrf_potential='unknown'
                 )
                 
                 # Validate endpoint by making actual request

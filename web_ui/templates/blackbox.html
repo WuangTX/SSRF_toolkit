@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Blackbox SSRF Scan</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f5f7fa;
+            margin: 0;
+            padding: 0;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .header h1 {
+            margin: 0;
+            font-size: 2em;
+        }
+        
+        .header .back-btn {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            text-decoration: none;
+            transition: all 0.3s;
+        }
+        
+        .header .back-btn:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        
+        /* Tab Navigation */
+        .tab-navigation {
+            display: flex;
+            background: white;
+            border-radius: 12px;
+            padding: 10px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            gap: 10px;
+        }
+        
+        .tab-btn {
+            flex: 1;
+            padding: 15px 20px;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            border-radius: 8px;
+            font-size: 1em;
+            font-weight: 500;
+            transition: all 0.3s;
+            color: #666;
+        }
+        
+        .tab-btn:hover {
+            background: #f8f9fa;
+        }
+        
+        .tab-btn.active {
+            background: #e74c3c;
+            color: white;
+        }
+        
+        .tab-btn .tab-number {
+            display: inline-block;
+            width: 30px;
+            height: 30px;
+            line-height: 30px;
+            border-radius: 50%;
+            background: rgba(0,0,0,0.1);
+            margin-right: 10px;
+            font-weight: bold;
+        }
+        
+        .tab-btn.active .tab-number {
+            background: rgba(255,255,255,0.3);
+        }
+        
+        /* Tab Content */
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .config-section {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+            margin-bottom: 20px;
+        }
+        
+        .config-section h3 {
+            margin-top: 0;
+            margin-bottom: 20px;
+            color: #333;
+            font-size: 1.4em;
+            border-bottom: 2px solid #e74c3c;
+            padding-bottom: 10px;
+        }
+        
+        .form-group {
+            margin-bottom: 25px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #333;
+        }
+        
+        .form-group input[type="text"],
+        .form-group input[type="number"],
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1em;
+            transition: border-color 0.3s;
+        }
+        
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #e74c3c;
+        }
+        
+        .checkbox-group {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 15px;
+        }
+        
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            padding: 12px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            transition: all 0.3s;
+        }
+        
+        .checkbox-item:hover {
+            background: #e9ecef;
+        }
+        
+        .checkbox-item input[type="checkbox"] {
+            margin-right: 10px;
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+        
+        .checkbox-item label {
+            margin: 0;
+            cursor: pointer;
+            font-weight: normal;
+        }
+        
+        .radio-group {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .radio-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .radio-item:hover {
+            background: #e9ecef;
+        }
+        
+        .radio-item input[type="radio"] {
+            margin-right: 10px;
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+        
+        .radio-item.selected {
+            background: #e74c3c;
+            color: white;
+        }
+        
+        .help-text {
+            font-size: 0.9em;
+            color: #666;
+            margin-top: 5px;
+        }
+        
+        .action-buttons {
+            display: flex;
+            gap: 15px;
+            margin-top: 30px;
+        }
+        
+        .btn {
+            padding: 15px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .btn-primary {
+            background: #e74c3c;
+            color: white;
+            flex: 1;
+        }
+        
+        .btn-primary:hover {
+            background: #c0392b;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(231, 76, 60, 0.3);
+        }
+        
+        .btn-secondary {
+            background: #95a5a6;
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            background: #7f8c8d;
+        }
+        
+        .alert {
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .alert-warning {
+            background: #fff3cd;
+            border-left: 4px solid #f39c12;
+            color: #856404;
+        }
+        
+        .alert-info {
+            background: #d1ecf1;
+            border-left: 4px solid #17a2b8;
+            color: #0c5460;
+        }
+        
+        .file-upload {
+            border: 2px dashed #e0e0e0;
+            border-radius: 8px;
+            padding: 30px;
+            text-align: center;
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+        
+        .file-upload:hover {
+            border-color: #e74c3c;
+            background: #fff5f5;
+        }
+        
+        .file-upload input[type="file"] {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔴 Blackbox SSRF Testing</h1>
+            <a href="/" class="back-btn">← Về Dashboard</a>
+        </div>
+        
+        <!-- Tab Navigation -->
+        <div class="tab-navigation">
+            <button class="tab-btn active" onclick="switchTab(1)">
+                <span class="tab-number">1</span>
+                Recon / Input
+            </button>
+            <button class="tab-btn" onclick="switchTab(2)">
+                <span class="tab-number">2</span>
+                Payload Strategy
+            </button>
+            <button class="tab-btn" onclick="switchTab(3)">
+                <span class="tab-number">3</span>
+                Scan Config
+            </button>
+            <button class="tab-btn" onclick="switchTab(4)">
+                <span class="tab-number">4</span>
+                Review & Start
+            </button>
+        </div>
+        
+        <form id="scanForm">
+            <!-- TAB 1: Recon / Input -->
+            <div id="tab1" class="tab-content active">
+                <div class="config-section">
+                    <h3>📡 Input Source</h3>
+                    
+                    <div class="form-group">
+                        <label>Chọn nguồn dữ liệu</label>
+                        <div class="radio-group">
+                            <div class="radio-item selected" onclick="selectInputSource('manual')">
+                                <input type="radio" name="input_source" value="manual" checked>
+                                <label>Manual URL</label>
+                            </div>
+                            <div class="radio-item" onclick="selectInputSource('burp')">
+                                <input type="radio" name="input_source" value="burp">
+                                <label>Burp/HAR File</label>
+                            </div>
+                            <div class="radio-item" onclick="selectInputSource('swagger')">
+                                <input type="radio" name="input_source" value="swagger">
+                                <label>Swagger/OpenAPI</label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div id="manual_input" class="form-group">
+                        <label>Target URL *</label>
+                        <input type="text" name="target" placeholder="https://api.example.com" required>
+                        <div class="help-text">URL của API hoặc web app cần scan</div>
+                    </div>
+                    
+                    <div id="file_input" class="form-group" style="display: none;">
+                        <label>Upload File (HAR/Burp JSON)</label>
+                        <div class="file-upload" onclick="document.getElementById('traffic_file').click()">
+                            <input type="file" id="traffic_file" name="traffic_file" accept=".har,.json">
+                            <p>📁 Click để chọn file hoặc kéo thả vào đây</p>
+                            <p class="help-text">Hỗ trợ: Chrome HAR, Burp Suite JSON export</p>
+                        </div>
+                    </div>
+                    
+                    <div id="swagger_input" class="form-group" style="display: none;">
+                        <label>Swagger/OpenAPI URL hoặc File</label>
+                        <input type="text" name="swagger_url" placeholder="https://api.example.com/swagger.json">
+                        <div class="file-upload" onclick="document.getElementById('swagger_file').click()" style="margin-top: 15px;">
+                            <input type="file" id="swagger_file" name="swagger_file" accept=".json,.yaml,.yml">
+                            <p>📄 Hoặc upload file Swagger/OpenAPI</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="config-section">
+                    <h3>🔍 Auto Discovery</h3>
+                    <div class="checkbox-group">
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="auto_discovery" name="auto_discovery">
+                            <label for="auto_discovery">Enable Auto Discovery</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="js_analysis" name="js_analysis">
+                            <label for="js_analysis">JavaScript Analysis</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="sitemap_crawl" name="sitemap_crawl">
+                            <label for="sitemap_crawl">Sitemap Crawling</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="robots_parse" name="robots_parse">
+                            <label for="robots_parse">Robots.txt Parsing</label>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="action-buttons">
+                    <button type="button" class="btn btn-primary" onclick="switchTab(2)">Tiếp theo →</button>
+                </div>
+            </div>
+            
+            <!-- TAB 2: Payload Strategy -->
+            <div id="tab2" class="tab-content">
+                <div class="config-section">
+                    <h3>🎯 Target Types</h3>
+                    <div class="checkbox-group">
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="target_http" name="target_types" value="http" checked>
+                            <label for="target_http">HTTP Endpoints</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="target_internal" name="target_types" value="internal_service">
+                            <label for="target_internal">Internal Services</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="target_cloud" name="target_types" value="cloud_metadata">
+                            <label for="target_cloud">Cloud Metadata (AWS/GCP/Azure)</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="target_container" name="target_types" value="container_local">
+                            <label for="target_container">Container Services</label>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="config-section">
+                    <h3>💣 Attack Depth</h3>
+                    <div class="radio-group">
+                        <div class="radio-item selected" onclick="selectAttackDepth('quick')">
+                            <input type="radio" name="attack_depth" value="quick" checked>
+                            <label>Quick (5-10 phút)</label>
+                        </div>
+                        <div class="radio-item" onclick="selectAttackDepth('deep')">
+                            <input type="radio" name="attack_depth" value="deep">
+                            <label>Deep (20-40 phút)</label>
+                        </div>
+                        <div class="radio-item" onclick="selectAttackDepth('cloud')">
+                            <input type="radio" name="attack_depth" value="cloud">
+                            <label>Cloud Focused</label>
+                        </div>
+                        <div class="radio-item" onclick="selectAttackDepth('container')">
+                            <input type="radio" name="attack_depth" value="container">
+                            <label>Container Focused</label>
+                        </div>
+                    </div>
+                    <div class="help-text" style="margin-top: 15px;">
+                        Quick: Payload cơ bản | Deep: 500+ signatures | Cloud/Container: Chuyên biệt
+                    </div>
+                </div>
+                
+                <div class="config-section">
+                    <h3>🛠️ Payload Techniques</h3>
+                    <div class="checkbox-group">
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="payload_bypass" name="payload_strategies" value="url_bypass" checked>
+                            <label for="payload_bypass">URL Bypass (DNS rebinding, encoding)</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="payload_protocol" name="payload_strategies" value="protocol_smuggling">
+                            <label for="payload_protocol">Protocol Smuggling (gopher, dict, ftp)</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="payload_redirect" name="payload_strategies" value="redirect_based">
+                            <label for="payload_redirect">Redirect-based SSRF</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="payload_header" name="payload_strategies" value="header_injection">
+                            <label for="payload_header">Header Injection</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="payload_blind" name="payload_strategies" value="blind_ssrf" checked>
+                            <label for="payload_blind">Blind SSRF (Time-based, Side-channel)</label>
+                            <p style="font-size: 0.85em; color: #666; margin: 5px 0 0 25px;">
+                                ⚠️ Chú ý: Toolkit này chỉ hỗ trợ <strong>HTTP callback</strong>. 
+                                Không có DNS server để phát hiện DNS-based blind SSRF.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="action-buttons">
+                    <button type="button" class="btn btn-secondary" onclick="switchTab(1)">← Quay lại</button>
+                    <button type="button" class="btn btn-primary" onclick="switchTab(3)">Tiếp theo →</button>
+                </div>
+            </div>
+            
+            <!-- TAB 3: Scan Config -->
+            <div id="tab3" class="tab-content">
+                <div class="config-section">
+                    <h3>⚙️ Scan Methods</h3>
+                    <div class="checkbox-group">
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="param_fuzzing" name="scan_methods" value="parameters" checked>
+                            <label for="param_fuzzing">Parameter Fuzzing</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="header_fuzzing" name="scan_methods" value="headers" checked>
+                            <label for="header_fuzzing">Header Fuzzing</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="callback_test" name="scan_methods" value="callback" checked>
+                            <label for="callback_test">Callback Testing</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="internal_scan" name="scan_methods" value="internal">
+                            <label for="internal_scan">Internal Network Scan</label>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="config-section">
+                    <h3>🚀 Performance Settings</h3>
+                    <div class="form-group">
+                        <label>Timeout (giây)</label>
+                        <input type="number" name="timeout" value="10" min="5" max="60">
+                    </div>
+                    <div class="form-group">
+                        <label>Threads</label>
+                        <input type="number" name="threads" value="5" min="1" max="20">
+                    </div>
+                </div>
+                
+                <div class="config-section">
+                    <h3>🛡️ Safe Mode</h3>
+                    <div class="alert alert-info">
+                        💡 Safe Mode giúp scan an toàn hơn trong môi trường production
+                    </div>
+                    <div class="checkbox-group">
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="safe_mode" name="safe_mode" checked>
+                            <label for="safe_mode">Enable Safe Mode</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="disable_destructive" name="disable_destructive" checked>
+                            <label for="disable_destructive">Disable Destructive Payloads</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="scope_protection" name="scope_protection">
+                            <label for="scope_protection">Scope Protection</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="skip_validation" name="skip_validation">
+                            <label for="skip_validation">Skip Target Validation</label>
+                        </div>
+                    </div>
+                    <div class="form-group" style="margin-top: 15px;">
+                        <label>Throttle (requests/second)</label>
+                        <input type="number" name="throttle_rps" value="2" min="1" max="10">
+                    </div>
+                    <div class="form-group">
+                        <label>Allowed Domains (comma-separated)</label>
+                        <input type="text" name="allowed_domains" placeholder="example.com, api.example.com">
+                        <div class="help-text">Chỉ scan các domain được phép</div>
+                    </div>
+                </div>
+                
+                <div class="alert alert-info" style="margin-top: 15px;">
+                    💡 <strong>Skip Target Validation:</strong> Bỏ qua kiểm tra kết nối đến target trước khi scan. 
+                    Hữu ích khi target tạm thời không accessible hoặc đằng sau firewall/VPN.
+                </div>
+                
+                <div class="action-buttons">
+                    <button type="button" class="btn btn-secondary" onclick="switchTab(2)">← Quay lại</button>
+                    <button type="button" class="btn btn-primary" onclick="switchTab(4)">Review →</button>
+                </div>
+            </div>
+            
+            <!-- TAB 4: Review & Start -->
+            <div id="tab4" class="tab-content">
+                <div class="config-section">
+                    <h3>✅ Scan Configuration Review</h3>
+                    <div id="review_content">
+                        <!-- Will be populated by JavaScript -->
+                    </div>
+                </div>
+                
+                <div class="alert alert-warning">
+                    ⚠️ <strong>Lưu ý:</strong> Đảm bảo bạn có quyền scan target này. Chỉ scan các hệ thống bạn được phép kiểm tra.
+                </div>
+                
+                <div class="action-buttons">
+                    <button type="button" class="btn btn-secondary" onclick="switchTab(3)">← Quay lại</button>
+                    <button type="submit" class="btn btn-primary" id="startScanBtn">🚀 Bắt đầu Scan</button>
+                </div>
+            </div>
+        </form>
+    </div>
+    
+    <script>
+        let currentTab = 1;
+        
+        function switchTab(tabNumber) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Remove active class from all buttons
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // Show selected tab
+            document.getElementById('tab' + tabNumber).classList.add('active');
+            document.querySelectorAll('.tab-btn')[tabNumber - 1].classList.add('active');
+            
+            currentTab = tabNumber;
+            
+            // Populate review if on tab 4
+            if (tabNumber === 4) {
+                populateReview();
+            }
+            
+            // Scroll to top
+            window.scrollTo(0, 0);
+        }
+        
+        function selectInputSource(source) {
+            // Update radio items
+            document.querySelectorAll('.radio-item').forEach(item => {
+                item.classList.remove('selected');
+            });
+            event.currentTarget.classList.add('selected');
+            
+            // Show/hide input sections
+            document.getElementById('manual_input').style.display = source === 'manual' ? 'block' : 'none';
+            document.getElementById('file_input').style.display = source === 'burp' ? 'block' : 'none';
+            document.getElementById('swagger_input').style.display = source === 'swagger' ? 'block' : 'none';
+        }
+        
+        function selectAttackDepth(depth) {
+            document.querySelectorAll('#tab2 .radio-item').forEach(item => {
+                item.classList.remove('selected');
+            });
+            event.currentTarget.classList.add('selected');
+        }
+        
+        function populateReview() {
+            const formData = new FormData(document.getElementById('scanForm'));
+            let html = '<table style="width: 100%; border-collapse: collapse;">';
+            
+            // Input source
+            html += '<tr style="border-bottom: 1px solid #eee;"><td style="padding: 15px; font-weight: bold;">Input Source:</td><td style="padding: 15px;">' + formData.get('input_source') + '</td></tr>';
+            
+            // Target
+            if (formData.get('target')) {
+                html += '<tr style="border-bottom: 1px solid #eee;"><td style="padding: 15px; font-weight: bold;">Target URL:</td><td style="padding: 15px;">' + formData.get('target') + '</td></tr>';
+            }
+            
+            // Attack depth
+            html += '<tr style="border-bottom: 1px solid #eee;"><td style="padding: 15px; font-weight: bold;">Attack Depth:</td><td style="padding: 15px;">' + formData.get('attack_depth') + '</td></tr>';
+            
+            // Safe mode
+            html += '<tr style="border-bottom: 1px solid #eee;"><td style="padding: 15px; font-weight: bold;">Safe Mode:</td><td style="padding: 15px;">' + (formData.get('safe_mode') ? '✅ Enabled' : '❌ Disabled') + '</td></tr>';
+            
+            // Throttle
+            html += '<tr style="border-bottom: 1px solid #eee;"><td style="padding: 15px; font-weight: bold;">Throttle:</td><td style="padding: 15px;">' + formData.get('throttle_rps') + ' req/s</td></tr>';
+            
+            html += '</table>';
+            document.getElementById('review_content').innerHTML = html;
+        }
+        
+        // Handle form submission
+        document.getElementById('scanForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            
+            // Show loading
+            document.getElementById('startScanBtn').disabled = true;
+            document.getElementById('startScanBtn').textContent = '⏳ Đang khởi động scan...';
+            
+            fetch('/api/scan/start', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('✅ Scan đã bắt đầu! Chuyển đến trang Results để xem tiến trình.');
+                    window.location.href = '/results';
+                } else {
+                    alert('❌ Lỗi: ' + data.error);
+                    document.getElementById('startScanBtn').disabled = false;
+                    document.getElementById('startScanBtn').textContent = '🚀 Bắt đầu Scan';
+                }
+            })
+            .catch(error => {
+                alert('❌ Lỗi kết nối: ' + error);
+                document.getElementById('startScanBtn').disabled = false;
+                document.getElementById('startScanBtn').textContent = '🚀 Bắt đầu Scan';
+            });
+        });
+        
+        // File upload handling
+        document.getElementById('traffic_file')?.addEventListener('change', function(e) {
+            if (e.target.files.length > 0) {
+                const fileName = e.target.files[0].name;
+                e.target.parentElement.querySelector('p').textContent = '✅ Đã chọn: ' + fileName;
+            }
+        });
+        
+        document.getElementById('swagger_file')?.addEventListener('change', function(e) {
+            if (e.target.files.length > 0) {
+                const fileName = e.target.files[0].name;
+                e.target.parentElement.querySelector('p').textContent = '✅ Đã chọn: ' + fileName;
+            }
+        });
+    </script>
+</body>
+</html>
