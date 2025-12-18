@@ -11,11 +11,15 @@ import json
 import threading
 import time
 import requests
+import logging
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 import urllib3
 from dotenv import load_dotenv
+
+# Setup logging
+logger = logging.getLogger(__name__)
 
 # Load environment variables from .env file
 env_path = Path(__file__).parent.parent / '.env'
@@ -110,7 +114,13 @@ class CallbackServerClient:
                     return f"{public_url}{path}"
                 return public_url
             # Use specific address (e.g., Docker host, LAN IP)
-            return f"http://{address}:8888{path}"
+            # Check if address already has port to avoid double-port bug
+            if ':' in address:
+                # Address already has port (e.g., '40.82.145.240:8888')
+                return f"http://{address}{path}"
+            else:
+                # Address is just hostname/IP (e.g., '192.168.1.100')
+                return f"http://{address}:8888{path}"
         
         # Priority 4: Fallback to localhost (last resort)
         if path:
@@ -136,9 +146,10 @@ class CallbackServerClient:
             try:
                 from urllib.parse import urlparse
                 parsed = urlparse(callback_url)
+                # Use netloc which includes host:port (e.g., '40.82.145.240:8888')
                 callback_host = parsed.netloc or parsed.path
                 if callback_host:
-                    addresses.append(callback_host)
+                    addresses.append(callback_host)  # Keep port in address
             except Exception:
                 pass
         
@@ -213,17 +224,30 @@ class CallbackServerClient:
             List of callback dictionaries
         """
         try:
+            # Use public API endpoint (no auth required) for toolkit integration
             response = requests.get(
-                f"{self.base_url}/api/callbacks",
-                params={'timeout': timeout},
+                f"{self.base_url}/api/callbacks/public",
+                params={'limit': 100},  # Get recent 100 callbacks
                 timeout=timeout + 1
             )
+            
             if response.status_code == 200:
-                data = response.json()
-                return data.get('callbacks', [])
+                try:
+                    data = response.json()
+                    return data.get('callbacks', [])
+                except ValueError:
+                    # Response is not JSON
+                    logger.warning(f"⚠️ Callback server returned non-JSON response")
+                    return []
+            else:
+                logger.warning(f"⚠️ Callback server returned status {response.status_code}")
+                return []
+        except requests.exceptions.ConnectionError as e:
+            logger.warning(f"⚠️ Cannot connect to callback server: {e}")
+            return []
         except Exception as e:
-            print(f"⚠️ Error getting callbacks: {e}")
-        return []
+            logger.warning(f"⚠️ Error getting callbacks: {e}")
+            return []
     
     def get_callbacks_for_test(self, test_id: str):
         """Get all callbacks for a specific test"""
@@ -288,24 +312,39 @@ def add_finding(finding: dict):
     
     # Emit to UI via SocketIO - send full finding data
     try:
-        # Prepare full finding data for frontend
-        finding_data = {
-            'severity': finding.get('severity', 'MEDIUM'),
-            'title': finding.get('title', 'SSRF Vulnerability'),
-            'message': finding.get('description') or finding.get('title', 'Vulnerability found'),
-            'description': finding.get('description', ''),
-            'category': finding.get('category', 'SSRF'),
-            'affected_url': finding.get('affected_url', ''),
-            'method': finding.get('method', 'N/A'),
-            'parameter': finding.get('parameter', 'N/A'),
-            'cvss_score': finding.get('cvss_score', 'N/A'),
-            'cwe_id': finding.get('cwe_id', 'CWE-918'),
-            'evidence': finding.get('evidence', ''),
-            'proof_of_concept': finding.get('proof_of_concept') or finding.get('payload', ''),
-            'remediation': finding.get('remediation', ''),
-            'references': finding.get('references', []),
-            'timestamp': finding.get('timestamp', datetime.now().isoformat())
-        }
+        # Prepare finding data - handle both whitebox and blackbox formats
+        if 'file' in finding and 'line' in finding:
+            # Whitebox format (code scanning)
+            finding_data = {
+                'type': finding.get('type') or finding.get('category', 'SSRF'),
+                'file': finding.get('file', ''),
+                'line': finding.get('line', 0),
+                'code': finding.get('code', ''),
+                'severity': finding.get('severity', 'MEDIUM'),
+                'description': finding.get('description', ''),
+                'function': finding.get('function', ''),
+                'cwe': finding.get('cwe', 'CWE-918'),
+                'ai_analysis': finding.get('ai_analysis')
+            }
+        else:
+            # Blackbox format (network scanning)
+            finding_data = {
+                'severity': finding.get('severity', 'MEDIUM'),
+                'title': finding.get('title', 'SSRF Vulnerability'),
+                'message': finding.get('description') or finding.get('title', 'Vulnerability found'),
+                'description': finding.get('description', ''),
+                'category': finding.get('category', 'SSRF'),
+                'affected_url': finding.get('affected_url', ''),
+                'method': finding.get('method', 'N/A'),
+                'parameter': finding.get('parameter', 'N/A'),
+                'cvss_score': finding.get('cvss_score', 'N/A'),
+                'cwe_id': finding.get('cwe_id', 'CWE-918'),
+                'evidence': finding.get('evidence', ''),
+                'proof_of_concept': finding.get('proof_of_concept') or finding.get('payload', ''),
+                'remediation': finding.get('remediation', ''),
+                'references': finding.get('references', []),
+                'timestamp': finding.get('timestamp', datetime.now().isoformat())
+            }
         socketio.emit('finding', finding_data)
     except Exception as e:
         pass  # Non-fatal: finding still saved to state
@@ -355,30 +394,68 @@ def get_or_create_callback_server(port: int = 8888):
     with callback_server_lock:
         # Check if we already have a client wrapper
         if global_callback_server is not None:
-            web_logger.info(f"♻️ Reusing existing callback client (port {port})")
+            web_logger.info(f"♻️ Reusing existing callback client")
             return global_callback_server
         
-        # Create client wrapper to connect to external server
-        try:
-            web_logger.info(f"🔌 Connecting to external callback server on port {port}...")
+        # Check if CALLBACK_URL is set in environment (VPS server)
+        callback_url = os.getenv('CALLBACK_URL')
+        if callback_url:
+            web_logger.info(f"✅ Using VPS callback server from .env: {callback_url}")
             
-            # Test if server is already running
+            # Extract host and port from URL
+            from urllib.parse import urlparse
+            parsed = urlparse(callback_url)
+            callback_host = parsed.hostname
+            callback_port = parsed.port or 8888
+            
+            try:
+                # Test VPS server connectivity
+                test_response = requests.get(f"{callback_url}/health", timeout=5)
+                if test_response.status_code == 200:
+                    web_logger.info(f"✅ VPS callback server is accessible")
+                    
+                    # Create client wrapper for VPS server
+                    client = CallbackServerClient(host=callback_host, port=callback_port)
+                    global_callback_server = client
+                    return client
+                else:
+                    web_logger.warning(f"⚠️ VPS server returned status {test_response.status_code}, but continuing...")
+                    # Create client anyway - server might be accessible for callbacks
+                    client = CallbackServerClient(host=callback_host, port=callback_port)
+                    global_callback_server = client
+                    return client
+                    
+            except Exception as e:
+                web_logger.warning(f"⚠️ Cannot verify VPS callback server: {e}")
+                web_logger.info(f"💡 Continuing anyway - VPS server might be accessible from target")
+                # Create client anyway
+                client = CallbackServerClient(host=callback_host, port=callback_port)
+                global_callback_server = client
+                return client
+        
+        # Fallback: Try local callback server
+        try:
+            web_logger.info(f"🔌 No CALLBACK_URL in .env, trying local callback server on port {port}...")
+            
+            # Test if local server is running
             test_response = requests.get(f"http://127.0.0.1:{port}/health", timeout=2)
             if test_response.status_code == 200:
-                web_logger.info(f"✅ Connected to external callback server on port {port}")
+                web_logger.info(f"✅ Connected to local callback server on port {port}")
                 
                 # Create client wrapper object
                 client = CallbackServerClient(host='127.0.0.1', port=port)
                 global_callback_server = client
                 return client
             else:
-                web_logger.error(f"❌ Callback server on port {port} returned status {test_response.status_code}")
+                web_logger.error(f"❌ Local callback server returned status {test_response.status_code}")
                 raise Exception(f"Callback server health check failed")
                 
         except requests.exceptions.ConnectionError:
-            web_logger.error(f"❌ Cannot connect to callback server on port {port}")
-            web_logger.error(f"💡 Make sure start_all.ps1 has started the callback server first!")
-            raise Exception(f"Callback server on port {port} is not running. Please start it with start_all.ps1")
+            web_logger.error(f"❌ Cannot connect to callback server")
+            web_logger.error(f"💡 Solutions:")
+            web_logger.error(f"   1. Set CALLBACK_URL in .env to use VPS server")
+            web_logger.error(f"   2. Start local callback server with start_all.ps1")
+            raise Exception(f"No callback server available. Set CALLBACK_URL in .env or start local server.")
         except Exception as e:
             web_logger.error(f"❌ Error connecting to callback server: {e}")
             raise
@@ -508,6 +585,16 @@ def whitebox_scan():
     """Whitebox scan page"""
     return render_template('whitebox.html')
 
+@app.route('/test-quick')
+def test_quick():
+    """Quick test page for debugging"""
+    return render_template('test_quick.html')
+
+@app.route('/ai-analysis')
+def ai_analysis():
+    """AI Analysis real-time monitoring page"""
+    return render_template('ai_analysis.html')
+
 @app.route('/results')
 def results():
     """Results page - real-time scan results"""
@@ -601,16 +688,30 @@ def start_scan():
         # Multipart form data or form-encoded
         mode = request.form.get('mode', 'blackbox')
         target = request.form.get('target')
-        source_path = request.form.get('source_path', '')
+        source_path = request.form.get('source_path', '').strip()
         auto_discovery = request.form.get('auto_discovery') == 'on'
         # Default to True if not explicitly set (for compatibility with simplified UI)
         endpoint_discovery = request.form.get('endpoint_discovery', 'on') == 'on'
         parameter_fuzzing = request.form.get('parameter_fuzzing', 'on') == 'on'
-        callback_testing = request.form.get('callback_testing', 'on') == 'on'
+        # Check if 'callback' is in scan_methods list (form uses scan_methods value="callback")
+        scan_methods = request.form.getlist('scan_methods')
+        callback_testing = 'callback' in scan_methods or request.form.get('callback_testing', 'on') == 'on'
         internal_scanning = request.form.get('internal_scanning', 'on') == 'on'
         docker_inspection = request.form.get('docker_inspection', 'on') == 'on'
         code_scanning = request.form.get('code_scanning', 'on') == 'on'
         timeout = int(request.form.get('timeout', 10))
+        
+        # Validation for whitebox mode
+        if mode == 'whitebox' and not source_path:
+            return jsonify({'error': 'Source code path is required for whitebox analysis'}), 400
+        
+        # Check if path exists (for whitebox)
+        if mode == 'whitebox' and source_path:
+            import os
+            if not os.path.exists(source_path):
+                return jsonify({'error': f'Path not found: {source_path}'}), 400
+            if not os.path.isdir(source_path):
+                return jsonify({'error': f'Path must be a directory: {source_path}'}), 400
         endpoint_source = request.form.get('endpoint_source', 'url')  # Default 'url' for direct API testing
         
         # Burp import specific fields
@@ -697,6 +798,8 @@ def start_scan():
             try:
                 web_logger.info(f"🔍 Validating target: {target}")
                 response = requests.get(target, timeout=5, allow_redirects=True, verify=False)
+                # Accept any status code (including 400, 404, 500) as valid response
+                # Only connection errors (DNS, network unreachable) are considered failures
                 web_logger.info(f"✅ Target is accessible (Status: {response.status_code})")
             except requests.exceptions.ConnectionError as e:
                 error_detail = str(e).lower()
@@ -783,10 +886,16 @@ def start_scan():
     )
     
     # Start scan in background thread
+    web_logger.info(f"🚀 Starting scan in background thread...")
+    web_logger.info(f"   Mode: {mode}")
+    web_logger.info(f"   Source path: {source_path if mode == 'whitebox' else 'N/A'}")
+    web_logger.info(f"   Target: {target if mode != 'whitebox' else 'N/A'}")
+    
     thread = threading.Thread(target=run_scan, args=(config,))
     thread.daemon = True
     thread.start()
     
+    web_logger.info(f"✅ Background thread started successfully")
     return jsonify({'success': True, 'message': 'Scan started'})
 
 @app.route('/api/scan/stop', methods=['POST'])
@@ -2090,19 +2199,68 @@ def run_graybox(config: ToolkitConfig, db: FindingDatabase):
 
 def run_whitebox(config: ToolkitConfig, db: FindingDatabase):
     """Run white box testing"""
+    web_logger.info("=" * 60)
     web_logger.info("📝 Starting White Box Testing")
+    web_logger.info(f"   Source path: {config.whitebox.source_code_path}")
+    web_logger.info(f"   Use AI: {config.whitebox.use_ai}")
+    web_logger.info(f"   AI Model: {config.whitebox.ai_model}")
+    web_logger.info(f"   Max AI findings: {getattr(config.whitebox, 'max_ai_findings', 20)}")
+    web_logger.info("=" * 60)
     
     if config.whitebox.code_scan and config.whitebox.source_code_path:
-        update_progress('Code Scanning', 95)
+        update_progress('Code Scanning', 90)
         web_logger.info("🔍 Scanning source code")
         
-        scanner = CodeScanner(config.whitebox.source_code_path)
-        vulnerabilities = scanner.scan()
+        # Check if AI analysis is enabled
+        use_ai = config.whitebox.use_ai
+        ai_model = config.whitebox.ai_model
         
+        if use_ai:
+            web_logger.info(f"🤖 AI Analysis ENABLED with model: {ai_model}")
+            web_logger.info("📊 Two-phase analysis: Fast Static Scan → AI Deep Analysis")
+        
+        # Initialize scanner with AI support
+        scanner = CodeScanner(
+            config.whitebox.source_code_path,
+            use_ai=use_ai,
+            ai_model=ai_model
+        )
+        
+        # Get max AI findings limit
+        max_ai_findings = getattr(config.whitebox, 'max_ai_findings', 20)
+        
+        # Phase 1: Traditional static analysis
+        update_progress('Phase 1: Static Analysis', 92)
+        vulnerabilities = scanner.scan_directory(max_ai_findings=max_ai_findings)
+        
+        # Phase 2: AI deep analysis (if enabled)
+        if use_ai:
+            update_progress('Phase 2: AI Deep Analysis', 97)
+            web_logger.info("🧠 AI is analyzing findings for false positives...")
+        
+        # Log findings with AI insights and emit to UI
         for vuln in vulnerabilities:
-            web_logger.finding(vuln['severity'],
-                f"{vuln['type']} in {vuln['file']}:{vuln['line']} - {vuln['description']}"
-            )
+            # Build finding message
+            msg = f"{vuln['type']} in {vuln['file']}:{vuln['line']} - {vuln['description']}"
+            
+            # Add AI analysis info if available
+            if 'ai_analysis' in vuln and vuln['ai_analysis']:
+                ai = vuln['ai_analysis']
+                confidence = ai.get('confidence', 0)
+                msg += f" [AI Confidence: {confidence}%]"
+                
+                if ai.get('reasoning'):
+                    msg += f"\n   💡 AI: {ai['reasoning']}"
+            
+            web_logger.finding(vuln['severity'], msg)
+            
+            # IMPORTANT: Emit finding to UI via WebSocket
+            add_finding(vuln)
+        
+        # Summary log
+        if use_ai and vulnerabilities:
+            confirmed = sum(1 for v in vulnerabilities if v.get('ai_analysis', {}).get('vulnerable', True))
+            web_logger.info(f"✅ AI Analysis Complete: {confirmed}/{len(vulnerabilities)} findings confirmed")
 
 def update_progress(phase: str, progress: int):
     """Update scan progress (thread-safe)"""

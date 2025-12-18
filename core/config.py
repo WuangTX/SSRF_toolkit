@@ -16,7 +16,7 @@ class BlackBoxConfig:
     threads: int = 5
     wordlist_path: str = "wordlists/common.txt"
     callback_server: Optional[str] = None
-    callback_url: Optional[str] = None  # Manual override: https://your-ngrok-url.ngrok-free.dev
+    callback_url: Optional[str] = None
     
     # ===== 1. TEST MODE =====
     test_mode: str = "blackbox"  # "blackbox", "graybox", "whitebox"

@@ -2,7 +2,7 @@
 Enhanced Callback Server with Realtime Dashboard + SQLite Database
 Receives SSRF callbacks and displays them in a web UI for analysis.
 """
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, session, redirect, url_for
 import logging
 from datetime import datetime
 from threading import Lock
@@ -11,9 +11,24 @@ import json
 import sqlite3
 from pathlib import Path
 import ipaddress
+from functools import wraps
 
 app = Flask(__name__)
+app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'change-me-in-production-QTX181004')
 logging.basicConfig(level=logging.INFO)
+
+# Dashboard credentials
+DASHBOARD_USERNAME = os.environ.get('DASHBOARD_USER', 'admin')
+DASHBOARD_PASSWORD = os.environ.get('DASHBOARD_PASS', 'QTX181004abc@')
+
+def require_auth(f):
+    """Decorator to require authentication for dashboard routes"""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get('authenticated'):
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated
 
 def is_private_ip(ip_str):
     """Check if IP address is private/local (not a real SSRF)"""
@@ -39,6 +54,7 @@ db_lock = Lock()
 
 def init_db():
     with sqlite3.connect(str(DB_PATH)) as conn:
+        # HTTP callbacks table
         conn.execute('''
             CREATE TABLE IF NOT EXISTS callbacks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -58,6 +74,22 @@ def init_db():
         conn.execute('CREATE INDEX IF NOT EXISTS idx_timestamp ON callbacks(timestamp)')
         conn.execute('CREATE INDEX IF NOT EXISTS idx_service ON callbacks(service_detected)')
         conn.execute('CREATE INDEX IF NOT EXISTS idx_ssrf ON callbacks(is_ssrf)')
+        
+        # DNS callbacks table
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS dns_callbacks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                domain TEXT NOT NULL,
+                query_type TEXT NOT NULL,
+                client_ip TEXT NOT NULL,
+                raw_query TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_dns_timestamp ON dns_callbacks(timestamp)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_dns_domain ON dns_callbacks(domain)')
+        
         conn.commit()
 
 init_db()
@@ -94,8 +126,19 @@ def store_callback(path, method, remote_addr, headers, body):
             service = detect_service_from_ua(user_agent)
             body_text = body[:5000] if body else ''
             
-            # Check if this is a real SSRF (from public IP)
-            is_ssrf_flag = 1 if not is_private_ip(remote_addr) else 0
+            # Check if this is a real SSRF
+            # SSRF = server-side requests from TARGET application (python, java, curl, etc.)
+            # NOT browser requests from users
+            # NOT toolkit's internal requests (/addresses, /api/callbacks/public, /health)
+            is_ssrf_flag = 0
+            
+            # Exclude toolkit's internal endpoints
+            internal_paths = ['/addresses', '/api/', '/health', '/favicon.ico', '/robots.txt', '/']
+            is_internal = any(path.startswith(p) for p in internal_paths)
+            
+            if not is_internal and service not in ['browser', 'Unknown']:
+                # Likely a server-side request from target application
+                is_ssrf_flag = 1
             
             cursor = conn.execute('''
                 INSERT INTO callbacks (timestamp, path, method, remote_addr, is_ssrf, headers, body, body_length, user_agent, service_detected)
@@ -192,11 +235,36 @@ def clear_all_callbacks():
         conn = sqlite3.connect(str(DB_PATH))
         try:
             conn.execute('DELETE FROM callbacks')
+            conn.execute('DELETE FROM dns_callbacks')
             conn.commit()
         finally:
             conn.close()
 
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        
+        if username == DASHBOARD_USERNAME and password == DASHBOARD_PASSWORD:
+            session['authenticated'] = True
+            return redirect(url_for('dashboard'))
+        else:
+            return render_template('login.html', error='Invalid credentials'), 401
+    
+    # If already authenticated, redirect to dashboard
+    if session.get('authenticated'):
+        return redirect(url_for('dashboard'))
+    
+    return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    session.pop('authenticated', None)
+    return redirect(url_for('login'))
+
 @app.route('/', methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'])
+@require_auth
 def dashboard():
     # Log and store ALL requests to root path, including GET requests from target servers
     app.logger.info('Root request: %s / from %s', request.method, request.remote_addr)
@@ -226,6 +294,7 @@ def health_check():
     return jsonify({'status': 'ok', 'service': 'callback-server'}), 200
 
 @app.route('/api/callbacks', methods=['GET'])
+@require_auth
 def get_callbacks():
     limit = int(request.args.get('limit', 100))
     offset = int(request.args.get('offset', 0))
@@ -234,6 +303,24 @@ def get_callbacks():
     services = get_unique_services()
     return jsonify({'total': total, 'limit': limit, 'offset': offset, 'unique_services': len(services), 'services': services, 'callbacks': callbacks})
 
+@app.route('/api/callbacks/public', methods=['GET'])
+def get_callbacks_public():
+    """Public API endpoint for getting callbacks (no auth required) - for toolkit integration"""
+    limit = int(request.args.get('limit', 100))
+    offset = int(request.args.get('offset', 0))
+    callbacks, total = get_callbacks_from_db(limit=limit, offset=offset, service_filter=None)
+    return jsonify({'total': total, 'callbacks': callbacks})
+
+@app.route('/api/clear', methods=['POST'])
+@require_auth
+def clear_callbacks():
+    """Clear all callbacks from database"""
+    try:
+        clear_all_callbacks()
+        return jsonify({'success': True, 'message': 'All callbacks cleared'}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/callbacks/<int:callback_id>', methods=['GET'])
 def get_callback_detail(callback_id):
     callback = get_callback_by_id(callback_id)
@@ -241,8 +328,89 @@ def get_callback_detail(callback_id):
         return jsonify({'error': 'Not found'}), 404
     return jsonify(callback)
 
+@app.route('/api/dns_callbacks', methods=['GET'])
+def get_dns_callbacks():
+    """Get DNS callbacks from database"""
+    limit = int(request.args.get('limit', 100))
+    offset = int(request.args.get('offset', 0))
+    
+    with db_lock:
+        conn = sqlite3.connect(str(DB_PATH))
+        conn.row_factory = sqlite3.Row
+        try:
+            rows = conn.execute('''
+                SELECT * FROM dns_callbacks 
+                ORDER BY id DESC LIMIT ? OFFSET ?
+            ''', (limit, offset)).fetchall()
+            
+            dns_callbacks = []
+            for row in rows:
+                dns_callbacks.append({
+                    'id': row['id'],
+                    'timestamp': row['timestamp'],
+                    'domain': row['domain'],
+                    'query_type': row['query_type'],
+                    'client_ip': row['client_ip'],
+                    'raw_query': row['raw_query']
+                })
+            
+            total = conn.execute('SELECT COUNT(*) as total FROM dns_callbacks').fetchone()['total']
+            return jsonify({'total': total, 'limit': limit, 'offset': offset, 'dns_callbacks': dns_callbacks})
+        finally:
+            conn.close()
+
+@app.route('/api/all_callbacks', methods=['GET'])
+@require_auth
+def get_all_callbacks():
+    """Get both HTTP and DNS callbacks combined"""
+    limit = int(request.args.get('limit', 50))
+    
+    # Get HTTP callbacks
+    http_callbacks, http_total = get_callbacks_from_db(limit=limit, offset=0)
+    
+    # Get DNS callbacks
+    with db_lock:
+        conn = sqlite3.connect(str(DB_PATH))
+        conn.row_factory = sqlite3.Row
+        try:
+            dns_rows = conn.execute('''
+                SELECT * FROM dns_callbacks 
+                ORDER BY id DESC LIMIT ?
+            ''', (limit,)).fetchall()
+            
+            dns_callbacks = []
+            for row in dns_rows:
+                dns_callbacks.append({
+                    'id': row['id'],
+                    'type': 'dns',
+                    'timestamp': row['timestamp'],
+                    'domain': row['domain'],
+                    'query_type': row['query_type'],
+                    'client_ip': row['client_ip']
+                })
+            
+            dns_total = conn.execute('SELECT COUNT(*) as total FROM dns_callbacks').fetchone()['total']
+        finally:
+            conn.close()
+    
+    # Add type to HTTP callbacks
+    for cb in http_callbacks:
+        cb['type'] = 'http'
+    
+    # Combine and sort by timestamp
+    all_callbacks = http_callbacks + dns_callbacks
+    all_callbacks.sort(key=lambda x: x['timestamp'], reverse=True)
+    
+    return jsonify({
+        'total': http_total + dns_total,
+        'http_total': http_total,
+        'dns_total': dns_total,
+        'callbacks': all_callbacks[:limit]
+    })
+
 @app.route('/api/callbacks', methods=['DELETE'])
-def clear_callbacks():
+@require_auth
+def delete_all_callbacks():
     clear_all_callbacks()
     app.logger.info('All callbacks cleared')
     return jsonify({'success': True, 'message': 'All callbacks cleared'})
@@ -335,7 +503,7 @@ if __name__ == '__main__':
     print(" Dashboard: http://localhost:8888/")
     print(" Callback endpoint: http://localhost:8888/<any-path>")
     print(" API: http://localhost:8888/api/callbacks")
-    print(" Use ngrok to expose: ngrok http 8888")
+    print(" Public URL: http://40.82.145.240:8888 (VPS)")
     print(" Database: " + str(DB_PATH))
     print("="*60)
     app.run(host='0.0.0.0', port=8888, debug=False)

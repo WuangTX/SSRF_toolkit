@@ -20,7 +20,7 @@
         }
         
         .header {
-            background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+            background-color: #dc3545;
             color: white;
             padding: 30px;
             border-radius: 12px;
@@ -469,10 +469,10 @@
                         </div>
                         <div class="checkbox-item">
                             <input type="checkbox" id="payload_blind" name="payload_strategies" value="blind_ssrf" checked>
-                            <label for="payload_blind">Blind SSRF (Time-based, Side-channel)</label>
-                            <p style="font-size: 0.85em; color: #666; margin: 5px 0 0 25px;">
-                                ⚠️ Chú ý: Toolkit này chỉ hỗ trợ <strong>HTTP callback</strong>. 
-                                Không có DNS server để phát hiện DNS-based blind SSRF.
+                            <label for="payload_blind">Blind SSRF (HTTP/DNS Callback)</label>
+                            <p style="font-size: 0.85em; color: #2ecc71; margin: 5px 0 0 25px; font-weight: 500;">
+                                ✅ Hỗ trợ: <strong>HTTP callback</strong> (port 8888) + <strong>DNS callback</strong> (port 53)
+                                <br>📡 Callback server: http://40.82.145.240:8888
                             </p>
                         </div>
                     </div>
@@ -499,11 +499,45 @@
                         </div>
                         <div class="checkbox-item">
                             <input type="checkbox" id="callback_test" name="scan_methods" value="callback" checked>
-                            <label for="callback_test">Callback Testing</label>
+                            <label for="callback_test">Callback Testing (HTTP + DNS)</label>
                         </div>
                         <div class="checkbox-item">
                             <input type="checkbox" id="internal_scan" name="scan_methods" value="internal">
                             <label for="internal_scan">Internal Network Scan</label>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="config-section">
+                    <h3>📡 Callback Type Selection</h3>
+                    <div class="alert alert-info">
+                        💡 Chọn loại callback server để phát hiện SSRF
+                    </div>
+                    <div class="checkbox-group">
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="callback_http" name="callback_types" value="http" checked>
+                            <label for="callback_http">HTTP Callback (Standard SSRF)</label>
+                            <p style="font-size: 0.85em; color: #666; margin: 5px 0 0 25px;">
+                                ✅ Best for: APIs trả về fetched content<br>
+                                🔧 Method: test_ssrf()
+                            </p>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="callback_dns" name="callback_types" value="dns" checked>
+                            <label for="callback_dns">DNS Callback (Blind SSRF)</label>
+                            <p style="font-size: 0.85em; color: #666; margin: 5px 0 0 25px;">
+                                ✅ Best for: Blind SSRF (no response content)<br>
+                                🔧 Method: test_blind_ssrf_dns()<br>
+                                💪 Bypasses HTTP-only firewalls
+                            </p>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="callback_cloud" name="callback_types" value="cloud_metadata">
+                            <label for="callback_cloud">Cloud Metadata Test</label>
+                            <p style="font-size: 0.85em; color: #666; margin: 5px 0 0 25px;">
+                                ☁️ Test AWS/GCP/Azure metadata endpoints<br>
+                                🔧 Method: test_cloud_metadata()
+                            </p>
                         </div>
                     </div>
                 </div>
@@ -674,7 +708,18 @@
                 method: 'POST',
                 body: formData
             })
-            .then(response => response.json())
+            .then(response => {
+                // Check if response is JSON
+                const contentType = response.headers.get('content-type');
+                if (contentType && contentType.includes('application/json')) {
+                    return response.json();
+                } else {
+                    // If not JSON, return text and throw error
+                    return response.text().then(text => {
+                        throw new Error('Server trả về HTML thay vì JSON. Response: ' + text.substring(0, 200));
+                    });
+                }
+            })
             .then(data => {
                 if (data.success) {
                     alert('✅ Scan đã bắt đầu! Chuyển đến trang Results để xem tiến trình.');
@@ -686,7 +731,7 @@
                 }
             })
             .catch(error => {
-                alert('❌ Lỗi kết nối: ' + error);
+                alert('❌ Lỗi: ' + error.message);
                 document.getElementById('startScanBtn').disabled = false;
                 document.getElementById('startScanBtn').textContent = '🚀 Bắt đầu Scan';
             });
