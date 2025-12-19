@@ -61,32 +61,35 @@ class JavaScriptAnalyzer:
                         
                         all_endpoints.add(full_url)
             
-            # ✅ HEURISTIC: If we found /products/ or /api/products/, add common SSRF endpoints
-            base_url = f"{self.parsed_target.scheme}://{self.parsed_target.netloc}"
-            heuristic_patterns = {
-                '/products/': [
-                    '/products/{id}/check_price/',
-                    '/products/{id}/fetch_review/',
-                    '/products/{id}/compare/',
-                    '/products/{id}/thumbnail/',
-                ],
-                '/api/products/': [
-                    '/api/products/{id}/check_price/',
-                    '/api/products/{id}/fetch_review/',
-                    '/api/products/{id}/compare/',
-                    '/api/products/{id}/thumbnail/',
-                ],
-                '/inventory/': [
-                    '/inventory/check_stock/',
-                    '/inventory/sync/',
-                ],
-                '/api/inventory/': [
-                    '/api/inventory/check_stock/',
-                    '/api/inventory/sync/',
-                ],
-            }
+            # ❌ DISABLED: Heuristic endpoint guessing causes false positives
+            # Only use endpoints actually found in JavaScript, not guessed patterns
+            # 
+            # base_url = f"{self.parsed_target.scheme}://{self.parsed_target.netloc}"
+            # heuristic_patterns = {
+            #     '/products/': [
+            #         '/products/{id}/check_price/',
+            #         '/products/{id}/fetch_review/',
+            #         '/products/{id}/compare/',
+            #         '/products/{id}/thumbnail/',
+            #     ],
+            #     '/api/products/': [
+            #         '/api/products/{id}/check_price/',
+            #         '/api/products/{id}/fetch_review/',
+            #         '/api/products/{id}/compare/',
+            #         '/api/products/{id}/thumbnail/',
+            #     ],
+            #     '/inventory/': [
+            #         '/inventory/check_stock/',
+            #         '/inventory/sync/',
+            #     ],
+            #     '/api/inventory/': [
+            #         '/api/inventory/check_stock/',
+            #         '/api/inventory/sync/',
+            #     ],
+            # }
             
-            for base_pattern, ssrf_endpoints in heuristic_patterns.items():
+            if False:  # Disabled heuristic patterns
+                base_pattern, ssrf_endpoints = None, None
                 # Check if we found this base endpoint
                 base_found = any(base_pattern in ep for ep in all_endpoints)
                 if base_found:

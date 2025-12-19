@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SSRF Detection Demo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 25px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        
+        .header h1 {
+            color: #333;
+            font-size: 2em;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            color: #666;
+            font-size: 1.1em;
+        }
+        
+        .panel {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 20px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.15);
+        }
+        
+        .panel h2 {
+            color: #333;
+            margin-bottom: 15px;
+            border-left: 4px solid #667eea;
+            padding-left: 15px;
+        }
+        
+        textarea {
+            width: 100%;
+            min-height: 200px;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            resize: vertical;
+            transition: border-color 0.3s;
+        }
+        
+        textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-top: 15px;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .results {
+            margin-top: 20px;
+        }
+        
+        .finding {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .finding.high {
+            border-left-color: #e74c3c;
+            background: #ffebee;
+        }
+        
+        .finding.medium {
+            border-left-color: #f39c12;
+            background: #fff8e1;
+        }
+        
+        .finding.low {
+            border-left-color: #3498db;
+            background: #e3f2fd;
+        }
+        
+        .finding-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        
+        .finding-url {
+            font-weight: 600;
+            color: #333;
+            word-break: break-all;
+        }
+        
+        .confidence-badge {
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .confidence-badge.high {
+            background: #e74c3c;
+            color: white;
+        }
+        
+        .confidence-badge.medium {
+            background: #f39c12;
+            color: white;
+        }
+        
+        .confidence-badge.low {
+            background: #3498db;
+            color: white;
+        }
+        
+        .finding-details {
+            font-size: 0.95em;
+            color: #555;
+            line-height: 1.6;
+        }
+        
+        .finding-details strong {
+            color: #333;
+        }
+        
+        .example-requests {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        
+        .example-btn {
+            background: #f8f9fa;
+            border: 2px solid #e0e0e0;
+            padding: 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-align: left;
+        }
+        
+        .example-btn:hover {
+            border-color: #667eea;
+            transform: translateY(-2px);
+            box-shadow: 0 3px 10px rgba(102, 126, 234, 0.2);
+        }
+        
+        .example-btn strong {
+            display: block;
+            color: #333;
+            margin-bottom: 5px;
+        }
+        
+        .example-btn small {
+            color: #666;
+            font-size: 0.85em;
+        }
+        
+        .summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .summary-item {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        
+        .summary-item .number {
+            font-size: 2.5em;
+            font-weight: bold;
+            display: block;
+            margin-bottom: 5px;
+        }
+        
+        .summary-item .label {
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚨 SSRF Detection Demo</h1>
+            <p>Paste một HTTP request để phát hiện SSRF vulnerabilities</p>
+        </div>
+        
+        <div class="panel">
+            <h2>📝 HTTP Request</h2>
+            
+            <div class="example-requests">
+                <button class="example-btn" onclick="loadExample(1)">
+                    <strong>Example 1: Avatar Validate</strong>
+                    <small>GET /api/users/me/avatar/validate?url=...</small>
+                </button>
+                <button class="example-btn" onclick="loadExample(2)">
+                    <strong>Example 2: Fetch Review</strong>
+                    <small>POST /api/products/13/fetch_review/</small>
+                </button>
+                <button class="example-btn" onclick="loadExample(3)">
+                    <strong>Example 3: Webhook</strong>
+                    <small>POST /api/webhooks/register</small>
+                </button>
+            </div>
+            
+            <textarea id="httpRequest" placeholder="Paste your HTTP request here...
+
+Example:
+GET /api/users/me/avatar/validate?url=http://user-service:8081/api/users/1 HTTP/2
+Host: quangtx.io.vn
+Authorization: Bearer eyJ...
+"></textarea>
+            
+            <button class="btn" id="analyzeBtn" onclick="analyzeRequest()">🔍 Analyze Request</button>
+        </div>
+        
+        <div class="panel" id="resultsPanel" style="display: none;">
+            <h2>📊 Detection Results</h2>
+            <div id="resultsContent"></div>
+        </div>
+    </div>
+    
+    <script>
+        const examples = {
+            1: `GET /api/users/me/avatar/validate?url=http://user-service:8081/api/users/1 HTTP/2
+Host: quangtx.io.vn
+Sec-Ch-Ua-Platform: "Windows"
+Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiVVNFUiIsInN1YiI6InVzZXIxIiwiaWF0IjoxNzY2MDQ4MzA3LCJleHAiOjE3NjYxMzQ3MDd9.cAqvSVQMVR2jnie5ZpAO5w3s3qBgxzGNW3NLcp7zzcg
+Accept: application/json, text/plain, */*
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36`,
+            
+            2: `POST /api/products/13/fetch_review/ HTTP/1.1
+Host: quangtx.io.vn
+Content-Type: application/json
+Authorization: Bearer eyJhbGciOiJIUzI1NiJ9...
+
+{"review_url": "http://example.com/review"}`,
+            
+            3: `POST /api/webhooks/register HTTP/1.1
+Host: api.example.com
+Content-Type: application/json
+
+{"webhook_url": "http://internal-service:8080/callback", "event_type": "user.created"}`
+        };
+        
+        function loadExample(num) {
+            document.getElementById('httpRequest').value = examples[num];
+        }
+        
+        async function analyzeRequest() {
+            const request = document.getElementById('httpRequest').value.trim();
+            
+            if (!request) {
+                alert('Please paste an HTTP request first!');
+                return;
+            }
+            
+            // Show loading
+            const btn = document.getElementById('analyzeBtn');
+            btn.disabled = true;
+            btn.textContent = '⏳ Analyzing...';
+            
+            const resultsPanel = document.getElementById('resultsPanel');
+            const resultsContent = document.getElementById('resultsContent');
+            
+            resultsPanel.style.display = 'block';
+            resultsContent.innerHTML = '<div class="loading">🔍 Analyzing request for SSRF vulnerabilities...</div>';
+            
+            try {
+                const response = await fetch('/api/ssrf/detect', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        raw_request: request
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayResults(data);
+                } else {
+                    resultsContent.innerHTML = `<div class="finding" style="border-left-color: #e74c3c;">
+                        <strong>❌ Error:</strong> ${data.error}
+                    </div>`;
+                }
+            } catch (error) {
+                resultsContent.innerHTML = `<div class="finding" style="border-left-color: #e74c3c;">
+                    <strong>❌ Error:</strong> ${error.message}
+                </div>`;
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🔍 Analyze Request';
+            }
+        }
+        
+        function displayResults(data) {
+            const resultsContent = document.getElementById('resultsContent');
+            
+            // Summary
+            const highCount = data.findings.filter(f => f.confidence === 'high').length;
+            const mediumCount = data.findings.filter(f => f.confidence === 'medium').length;
+            const lowCount = data.findings.filter(f => f.confidence === 'low').length;
+            
+            let html = `
+                <div class="summary">
+                    <div class="summary-item">
+                        <span class="number">${data.total_findings}</span>
+                        <span class="label">Total Findings</span>
+                    </div>
+                    <div class="summary-item" style="background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);">
+                        <span class="number">${highCount}</span>
+                        <span class="label">High Risk</span>
+                    </div>
+                    <div class="summary-item" style="background: linear-gradient(135deg, #f39c12 0%, #d68910 100%);">
+                        <span class="number">${mediumCount}</span>
+                        <span class="label">Medium Risk</span>
+                    </div>
+                    <div class="summary-item" style="background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);">
+                        <span class="number">${lowCount}</span>
+                        <span class="label">Low Risk</span>
+                    </div>
+                </div>
+                
+                <div class="results">
+            `;
+            
+            if (data.findings.length === 0) {
+                html += '<div class="finding"><strong>✅ No SSRF vulnerabilities detected</strong></div>';
+            } else {
+                data.findings.forEach((finding, index) => {
+                    html += `
+                        <div class="finding ${finding.confidence}">
+                            <div class="finding-header">
+                                <div class="finding-url">${index + 1}. ${finding.url}</div>
+                                <span class="confidence-badge ${finding.confidence}">${finding.confidence}</span>
+                            </div>
+                            <div class="finding-details">
+                                <strong>Method:</strong> ${finding.method}<br>
+                                <strong>Parameter:</strong> ${finding.parameter} (${finding.parameter_type})<br>
+                                <strong>Reason:</strong> ${finding.reason}<br>
+                                <strong>Detection:</strong> ${finding.detection_method}<br>
+                                <strong>Potential Targets:</strong> ${finding.potential_targets.slice(0, 3).join(', ')}...
+                            </div>
+                        </div>
+                    `;
+                });
+            }
+            
+            html += '</div>';
+            
+            resultsContent.innerHTML = html;
+        }
+        
+        // Load first example on page load
+        window.onload = function() {
+            loadExample(1);
+        };
+    </script>
+</body>
+</html>

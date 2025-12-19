@@ -846,6 +846,42 @@
                     </div>
                 </div>
 
+                <!-- Exploitation Section -->
+                <div class="modal-section" id="exploitSection" style="display: none;">
+                    <h3> Khai Thác SSRF (Exploitation)</h3>
+                    <div style="background: #f75870ff; padding: 15px; border-left: 4px solid #d75d5dff; border-radius: 6px; margin-bottom: 15px;">
+                        <p style="margin: 0; color: #d75d5dff; font-size: 0.95em; line-height: 1.6;">
+                            <strong>💡 Khai thác tiếp:</strong> SSRF đã xác nhận! Bạn có thể tiếp tục khai thác để:<br>
+                            • Quét Internal Network (services nội bộ: Redis, PostgreSQL, MongoDB...)<br>
+                            • Truy cập Cloud Metadata (AWS credentials, GCP tokens...)<br>
+                            • Discover Docker/Kubernetes services<br>
+                            • Test Database connections
+                        </p>
+                    </div>
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                        <button class="btn btn-danger" onclick="exploitInternalScan()" style="flex: 1; min-width: 200px;">
+                            🔍 Internal Network Scan
+                        </button>
+                        <button class="btn btn-warning" onclick="exploitCloudDeepDive()" style="flex: 1; min-width: 200px;">
+                            ☁️ Cloud Deep Dive
+                        </button>
+                        <button class="btn btn-info" onclick="exploitContainerDiscovery()" style="flex: 1; min-width: 200px;">
+                            🐳 Container Discovery
+                        </button>
+                        <button class="btn btn-success" onclick="exploitDatabaseTest()" style="flex: 1; min-width: 200px;">
+                            💾 Database Testing
+                        </button>
+                    </div>
+                    <div id="exploitProgress" style="display: none; margin-top: 15px; padding: 15px; background: #fff3cd; border-radius: 6px;">
+                        <p style="margin: 0;"><strong>⏳ Đang khai thác...</strong></p>
+                        <p id="exploitStatus" style="margin: 5px 0 0 0; font-size: 0.9em;">Khởi động...</p>
+                    </div>
+                    <div id="exploitResults" style="display: none; margin-top: 15px; padding: 15px; background: #f5f5f5; border-radius: 6px; max-height: 400px; overflow-y: auto;">
+                        <h4>📊 Kết Quả Khai Thác:</h4>
+                        <pre id="exploitResultsContent" style="margin: 10px 0 0 0; white-space: pre-wrap; font-size: 0.9em;"></pre>
+                    </div>
+                </div>
+
                 <!-- POC Section -->
                 <div class="modal-section">
                     <h3>⚔️ Miễn Chứng Khai Thác (POC)</h3>
@@ -899,10 +935,41 @@
         const endpointCount = document.getElementById('endpointCount');
         const findingCount = document.getElementById('findingCount');
         
-    // State
+    // State - Load initial data from server (but don't add to UI yet)
         let endpoints = [];
         let findings = [];
         let logs = [];
+        
+        const initialEndpoints = {{ initial_endpoints | tojson | safe }};
+        const initialFindings = {{ initial_findings | tojson | safe }};
+        
+        // Populate UI with initial findings after page loads
+        console.log(`📊 Loading ${initialFindings.length} initial findings from server`);
+        initialFindings.forEach(function(finding, index) {
+            finding.index = index;  // Store index for navigation
+            addFindingToUI(finding);
+        });
+        findings = initialFindings;  // Update state
+        
+        // Update counters
+        if (findings.length > 0) {
+            statFindings.textContent = findings.length;
+            findingCount.textContent = findings.length;
+            const critical = findings.filter(f => f.severity === 'CRITICAL').length;
+            statCritical.textContent = critical;
+        }
+        
+        // Populate UI with initial endpoints
+        console.log(`📊 Loading ${initialEndpoints.length} initial endpoints from server`);
+        initialEndpoints.forEach(function(endpoint) {
+            addEndpointToUI(endpoint);
+        });
+        endpoints = initialEndpoints;  // Update state
+        
+        if (endpoints.length > 0) {
+            statEndpoints.textContent = endpoints.length;
+            endpointCount.textContent = endpoints.length;
+        }
         
         // ✅ FIXED: Define timer locally (results.html doesn't load main.js)
         if (!window.ssrfScanTimer) {
@@ -1098,6 +1165,21 @@
             const totalParams = endpoints.reduce((sum, ep) => 
                 sum + (ep.parameters ? ep.parameters.length : 0), 0);
             if (statParams) statParams.textContent = totalParams;
+        }
+        
+        // Helper: Just add to UI without push/counter update (for initial load)
+        function addEndpointToUI(endpoint) {
+            // Just append to list without updating counters
+            if (endpoints.length === 0 && endpointsList.innerHTML.includes('Chưa tìm thấy')) {
+                endpointsList.innerHTML = '';
+            }
+            
+            // Copy same rendering logic from addEndpoint but without state management
+            // (Simplified - just call addEndpoint for initial load since we manage state separately)
+            const temp = [...endpoints];
+            addEndpoint(endpoint);
+            endpoints = temp;  // Restore (addEndpoint pushed, but we manage state)
+            endpoints.push(endpoint);  // Now actually push
         }
         
         // ✅ NEW: Show endpoint detail modal
@@ -1327,9 +1409,9 @@
             });
         }
         
-        // Add finding with full data
-        function addFinding(findingData) {
-            if (findings.length === 0) {
+        // Helper: Add finding to UI only (no counter update, no array push)
+        function addFindingToUI(findingData) {
+            if (findings.length === 1 && findingsList.innerHTML.includes('Chưa có lỗ hổng')) {
                 findingsList.innerHTML = '';
             }
             
@@ -1347,15 +1429,29 @@
                 </div>
             `;
             
-            // Store full finding data
-            findingItem.dataset.finding = JSON.stringify(findingData);
+            // Store finding ID (database ID or memory index) for navigation
+            const findingId = findingData.id || findingData.index || findings.length;
+            const isDbFinding = findingData.id ? 'true' : 'false';
+            findingItem.dataset.findingId = findingId;
+            findingItem.dataset.isDbFinding = isDbFinding;
             
-            // Add click handler to show modal
+            // Add click handler to navigate to detail page
             findingItem.addEventListener('click', function() {
-                showFindingModal(JSON.parse(this.dataset.finding));
+                const id = this.dataset.findingId;
+                const fromDb = this.dataset.isDbFinding === 'true';
+                // Use database ID if available, otherwise use memory index
+                window.location.href = '/finding/' + id + (fromDb ? '?from=db' : '?from=memory');
             });
             
             findingsList.insertBefore(findingItem, findingsList.firstChild);
+        }
+        
+        // Add finding with full data (called from SocketIO)
+        function addFinding(findingData) {
+            // Add to UI
+            addFindingToUI(findingData);
+            
+            // Store in array
             findings.push(findingData);
             
             // Update counters
@@ -1366,6 +1462,7 @@
             statCritical.textContent = critical;
             
             // Show notification for critical findings
+            const severity = findingData.severity || 'MEDIUM';
             if (severity === 'CRITICAL') {
                 addNotification(`🚨 Phát hiện lỗ hổng nghiêm trọng!`, 'error');
             }
@@ -1391,6 +1488,16 @@
             document.getElementById('modalDescription').textContent = finding.description || finding.message || '';
             document.getElementById('modalEvidence').textContent = finding.evidence || finding.proof_of_concept || 'Không có bằng chứng';
             document.getElementById('modalPoc').textContent = finding.proof_of_concept || finding.payload || 'Không có POC';
+            
+            // ✅ Show/Hide Exploitation Section for SSRF findings
+            const exploitSection = document.getElementById('exploitSection');
+            if (finding.category === 'SSRF' && finding.severity === 'CRITICAL') {
+                exploitSection.style.display = 'block';
+                // Store finding data for exploitation
+                exploitSection.dataset.finding = JSON.stringify(finding);
+            } else {
+                exploitSection.style.display = 'none';
+            }
             
             // Remediation
             const remediationDiv = document.getElementById('modalRemediation');
@@ -1477,6 +1584,7 @@
         
         socket.on('finding', function(data) {
             // Pass full finding data object
+            console.log('📦 Received finding:', data);
             addFinding(data);
         });
         
@@ -1523,30 +1631,156 @@
             }
         });
         
-        // Export button
+        // Export button - Export PDF report
         exportBtn.addEventListener('click', async function() {
+            if (findings.length === 0) {
+                addNotification('⚠️ Không có findings để xuất báo cáo', 'warning');
+                return;
+            }
+            
             try {
-                const response = await fetch('/api/report/export', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ format: 'json' })
-                });
+                addNotification('📄 Đang tạo báo cáo PDF...', 'info');
                 
-                if (response.ok) {
-                    const blob = await response.blob();
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `scan_report_${Date.now()}.json`;
-                    a.click();
-                    addNotification('✅ Xuất báo cáo thành công!', 'success');
-                } else {
-                    addNotification('❌ Không thể xuất báo cáo', 'error');
-                }
+                // Open PDF download in new window
+                const timestamp = Date.now();
+                window.open(`/api/report/export/pdf?t=${timestamp}`, '_blank');
+                
+                setTimeout(() => {
+                    addNotification('✅ Báo cáo PDF đã được tạo!', 'success');
+                }, 1000);
             } catch (error) {
-                addNotification(`❌ Lỗi xuất: ${error.message}`, 'error');
+                addNotification(`❌ Lỗi xuất PDF: ${error.message}`, 'error');
             }
         });
+        
+        // Exploitation functions
+        let currentFinding = null;
+        
+        function exploitInternalScan() {
+            const exploitSection = document.getElementById('exploitSection');
+            currentFinding = JSON.parse(exploitSection.dataset.finding);
+            
+            showExploitProgress('Internal Network Scan');
+            
+            fetch('/api/exploit/internal_scan', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    target_url: currentFinding.affected_url,
+                    parameter: currentFinding.parameter,
+                    method: currentFinding.method
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideExploitProgress();
+                showExploitResults(data);
+            })
+            .catch(error => {
+                hideExploitProgress();
+                alert('❌ Lỗi khai thác: ' + error.message);
+            });
+        }
+        
+        function exploitCloudDeepDive() {
+            const exploitSection = document.getElementById('exploitSection');
+            currentFinding = JSON.parse(exploitSection.dataset.finding);
+            
+            showExploitProgress('Cloud Deep Dive');
+            
+            fetch('/api/exploit/cloud_deep_dive', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    target_url: currentFinding.affected_url,
+                    parameter: currentFinding.parameter,
+                    method: currentFinding.method
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideExploitProgress();
+                showExploitResults(data);
+            })
+            .catch(error => {
+                hideExploitProgress();
+                alert('❌ Lỗi khai thác: ' + error.message);
+            });
+        }
+        
+        function exploitContainerDiscovery() {
+            const exploitSection = document.getElementById('exploitSection');
+            currentFinding = JSON.parse(exploitSection.dataset.finding);
+            
+            showExploitProgress('Container Discovery');
+            
+            fetch('/api/exploit/container_discovery', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    target_url: currentFinding.affected_url,
+                    parameter: currentFinding.parameter,
+                    method: currentFinding.method
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideExploitProgress();
+                showExploitResults(data);
+            })
+            .catch(error => {
+                hideExploitProgress();
+                alert('❌ Lỗi khai thác: ' + error.message);
+            });
+        }
+        
+        function exploitDatabaseTest() {
+            const exploitSection = document.getElementById('exploitSection');
+            currentFinding = JSON.parse(exploitSection.dataset.finding);
+            
+            showExploitProgress('Database Testing');
+            
+            fetch('/api/exploit/database_test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    target_url: currentFinding.affected_url,
+                    parameter: currentFinding.parameter,
+                    method: currentFinding.method
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideExploitProgress();
+                showExploitResults(data);
+            })
+            .catch(error => {
+                hideExploitProgress();
+                alert('❌ Lỗi khai thác: ' + error.message);
+            });
+        }
+        
+        function showExploitProgress(type) {
+            const progressDiv = document.getElementById('exploitProgress');
+            const statusP = document.getElementById('exploitStatus');
+            progressDiv.style.display = 'block';
+            statusP.textContent = `Đang khai thác: ${type}...`;
+            
+            // Hide results
+            document.getElementById('exploitResults').style.display = 'none';
+        }
+        
+        function hideExploitProgress() {
+            document.getElementById('exploitProgress').style.display = 'none';
+        }
+        
+        function showExploitResults(data) {
+            const resultsDiv = document.getElementById('exploitResults');
+            const resultsContent = document.getElementById('exploitResultsContent');
+            
+            resultsDiv.style.display = 'block';
+            resultsContent.textContent = JSON.stringify(data, null, 2);
+        }
         
         // Initial message
         addNotification('🚀 Scan đã bắt đầu! Đang theo dõi thời gian thực...', 'info');

@@ -5,6 +5,9 @@ python-socketio==5.10.0
 eventlet==0.33.3
 python-dotenv>=1.0.0
 
+# Report Generation
+reportlab>=4.0.0
+
 # Core Dependencies
 requests>=2.31.0
 urllib3>=2.0.0

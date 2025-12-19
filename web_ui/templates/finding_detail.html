@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chi Tiết Lỗ Hổng - SSRF Toolkit</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            background: #f5f7fa;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #f14141ff 0%, #f14141ff 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        }
+        
+        .header h1 {
+            margin: 0 0 10px 0;
+            font-size: 2em;
+        }
+        
+        .severity-badge {
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 0.9em;
+            margin-top: 10px;
+        }
+        
+        .severity-badge.critical {
+            background: #dc3545;
+            color: white;
+        }
+        
+        .severity-badge.high {
+            background: #ffc107;
+            color: #000;
+        }
+        
+        .severity-badge.medium {
+            background: #0dcaf0;
+            color: #000;
+        }
+        
+        .severity-badge.low {
+            background: #6c757d;
+            color: white;
+        }
+        
+        .back-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            text-decoration: none;
+            margin-bottom: 15px;
+            transition: all 0.3s;
+        }
+        
+        .back-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+        
+        .section {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .section h2 {
+            margin: 0 0 20px 0;
+            color: #333;
+            border-bottom: 2px solid #f14141ff;
+            padding-bottom: 10px;
+        }
+        
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        
+        .info-label {
+            font-weight: 600;
+            color: #666;
+            font-size: 0.9em;
+            margin-bottom: 5px;
+        }
+        
+        .info-value {
+            color: #333;
+            font-size: 1em;
+            word-break: break-all;
+        }
+        
+        .code-block {
+            background: #2d3748;
+            color: #e2e8f0;
+            padding: 20px;
+            border-radius: 8px;
+            overflow-x: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            line-height: 1.6;
+        }
+        
+        .exploit-section {
+            background: linear-gradient(135deg, #f14141ff 0%, #f14141ff 100%);
+            color: white;
+            padding: 25px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+        
+        .exploit-section h2 {
+            color: white;
+            border-bottom: 2px solid rgba(255,255,255,0.3);
+        }
+        
+        .exploit-buttons {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .exploit-btn {
+            padding: 15px 20px;
+            border: 2px solid white;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+            text-align: center;
+        }
+        
+        .exploit-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
+        
+        .exploit-btn:active {
+            transform: translateY(0);
+        }
+        
+        .exploit-results {
+            margin-top: 20px;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            color: #333;
+            border-radius: 8px;
+            max-height: 400px;
+            overflow-y: auto;
+            display: none;
+        }
+        
+        .exploit-progress {
+            margin-top: 20px;
+            padding: 15px;
+            background: #fff3cd;
+            color: #856404;
+            border-radius: 8px;
+            border-left: 4px solid #ffc107;
+            display: none;
+        }
+        
+        .btn-copy {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-bottom: 15px;
+            transition: all 0.3s;
+        }
+        
+        .btn-copy:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+        }
+        
+        .remediation-list {
+            padding-left: 20px;
+        }
+        
+        .remediation-list li {
+            margin-bottom: 10px;
+            line-height: 1.6;
+        }
+        
+        .references-list {
+            list-style: none;
+            padding: 0;
+        }
+        
+        .references-list li {
+            margin-bottom: 10px;
+        }
+        
+        .references-list a {
+            color: #667eea;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .references-list a:hover {
+            color: #5568d3;
+            text-decoration: underline;
+        }
+        
+        .alert-info {
+            background: #e3f2fd;
+            border-left: 4px solid #2196f3;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+        
+        .alert-info p {
+            margin: 0;
+            color: #0d47a1;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/results" class="back-btn">
+            <i class="fas fa-arrow-left"></i> Quay lại Results
+        </a>
+        
+        <div class="header">
+            <h1>{{ finding.title }}</h1>
+            <span class="severity-badge {{ finding.severity|lower }}">
+                <i class="fas fa-exclamation-triangle"></i> {{ finding.severity }}
+            </span>
+        </div>
+        
+        <!-- Basic Information -->
+        <div class="section">
+            <h2><i class="fas fa-info-circle"></i> Thông Tin Chi Tiết</h2>
+            <div class="info-grid">
+                <div class="info-item">
+                    <div class="info-label">Phân loại:</div>
+                    <div class="info-value">{{ finding.category }}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">CWE ID:</div>
+                    <div class="info-value">{{ finding.cwe_id }}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">CVSS Score:</div>
+                    <div class="info-value">{{ finding.cvss_score }}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Phương thức:</div>
+                    <div class="info-value">{{ finding.method }}</div>
+                </div>
+            </div>
+            
+            <div class="info-item" style="margin-top: 15px;">
+                <div class="info-label">URL bị ảnh hưởng:</div>
+                <div class="info-value">{{ finding.affected_url }}</div>
+            </div>
+            
+            <div class="info-item" style="margin-top: 15px;">
+                <div class="info-label">Tham số:</div>
+                <div class="info-value"><code>{{ finding.parameter }}</code></div>
+            </div>
+            
+            <div class="info-item" style="margin-top: 15px;">
+                <div class="info-label">Mô tả:</div>
+                <div class="info-value">{{ finding.description }}</div>
+            </div>
+        </div>
+        
+        <!-- Exploitation Section (for SSRF HIGH or CRITICAL) -->
+        {% if finding.category == 'SSRF' and (finding.severity == 'CRITICAL' or finding.severity == 'HIGH') %}
+        <div class="exploit-section">
+            <h2><i class="fas fa-rocket"></i> Khai Thác SSRF</h2>
+            <div class="alert-info" style="background: rgba(255,255,255,0.2); border-left-color: white;">
+                <p style="color: white;">
+                    <strong>💡 Khai thác sâu hơn (Deep Exploitation):</strong> SSRF đã được xác nhận! Đây KHÔNG phải lateral movement, mà là khai thác <strong>thông qua</strong> lỗ hổng SSRF để:<br>
+                    • <strong>Internal Scan:</strong> Quét services nội bộ (Redis, PostgreSQL, MongoDB...) mà không thể access từ bên ngoài<br>
+                    • <strong>Cloud Metadata:</strong> Đọc AWS credentials, GCP tokens từ metadata service<br>
+                    • <strong>Container Discovery:</strong> Tìm Docker API, Kubernetes endpoints<br>
+                    • <strong>Database Testing:</strong> Test kết nối đến databases qua SSRF<br>
+                    <em style="font-size: 0.9em; opacity: 0.9;">⚠️ Lưu ý: Các request sẽ được gửi QUA server bị lỗi SSRF, không phải từ máy bạn trực tiếp</em>
+                </p>
+            </div>
+            
+            <div style="margin-bottom: 15px;">
+                <button class="exploit-btn" onclick="runAllExploits()" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border: none; font-size: 1.1em; padding: 18px 25px;">
+                    <i class="fas fa-rocket"></i> 🚀 CHẠY TẤT CẢ (Recommended)
+                </button>
+            </div>
+            
+            <div class="exploit-buttons">
+                <button class="exploit-btn" onclick="exploitInternalScan()">
+                    <i class="fas fa-network-wired"></i> Internal Network Scan
+                </button>
+                <button class="exploit-btn" onclick="exploitCloudDeepDive()">
+                    <i class="fas fa-cloud"></i> Cloud Deep Dive
+                </button>
+                <button class="exploit-btn" onclick="exploitContainerDiscovery()">
+                    <i class="fab fa-docker"></i> Container Discovery
+                </button>
+                <button class="exploit-btn" onclick="exploitDatabaseTest()">
+                    <i class="fas fa-database"></i> Database Testing
+                </button>
+            </div>
+            
+            <div id="exploitProgress" class="exploit-progress">
+                <p style="margin: 0;"><strong>⏳ Đang khai thác...</strong></p>
+                <p id="exploitStatus" style="margin: 5px 0 0 0;">Khởi động...</p>
+                <div id="exploitLog" style="max-height: 200px; overflow-y: auto; margin-top: 10px; font-family: monospace; font-size: 13px; background: rgba(0,0,0,0.6); padding: 10px; border-radius: 6px; color: #00ff88; line-height: 1.6;">
+                    <!-- Real-time logs will appear here -->
+                </div>
+            </div>
+            
+            <div id="exploitResults" class="exploit-results">
+                <h3>📊 Kết Quả Khai Thác:</h3>
+                <div id="exploitSummary" style="margin: 10px 0; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 6px;">
+                    <!-- Summary stats -->
+                </div>
+                <pre id="exploitResultsContent" style="margin: 10px 0 0 0; white-space: pre-wrap;"></pre>
+            </div>
+        </div>
+        {% endif %}
+        
+        <!-- Proof of Concept -->
+        <div class="section">
+            <h2><i class="fas fa-code"></i> Miễn Chứng Khai Thác (POC)</h2>
+            <button class="btn-copy" onclick="copyToClipboard('pocCode')">
+                <i class="fas fa-copy"></i> Sao chép POC
+            </button>
+            <div class="code-block" id="pocCode">{{ finding.proof_of_concept or finding.payload }}</div>
+        </div>
+        
+        <!-- Evidence -->
+        {% if finding.evidence %}
+        <div class="section">
+            <h2><i class="fas fa-fingerprint"></i> Bằng Chứng</h2>
+            <div class="code-block">{{ finding.evidence }}</div>
+        </div>
+        {% endif %}
+        
+        <!-- Remediation -->
+        <div class="section">
+            <h2><i class="fas fa-shield-alt"></i> Khuyến Cáo Chỉnh Sửa</h2>
+            {% if finding.remediation %}
+            <ol class="remediation-list">
+                {% for step in finding.remediation.split('\n') %}
+                    {% if step.strip() %}
+                    <li>{{ step.strip().lstrip('0123456789. ') }}</li>
+                    {% endif %}
+                {% endfor %}
+            </ol>
+            {% else %}
+            <p>Tuân theo hướng dẫn OWASP để ngăn chặn SSRF và các lỗ hổng tương tự.</p>
+            {% endif %}
+        </div>
+        
+        <!-- References -->
+        <div class="section">
+            <h2><i class="fas fa-book"></i> Tài Liệu Tham Khảo</h2>
+            <ul class="references-list">
+                {% if finding.references %}
+                    {% for ref in finding.references %}
+                    <li>
+                        <i class="fas fa-external-link-alt"></i>
+                        <a href="{{ ref }}" target="_blank">{{ ref }}</a>
+                    </li>
+                    {% endfor %}
+                {% else %}
+                <li>
+                    <i class="fas fa-external-link-alt"></i>
+                    <a href="https://owasp.org/www-community/attacks/Server_Side_Request_Forgery" target="_blank">OWASP - Server Side Request Forgery</a>
+                </li>
+                <li>
+                    <i class="fas fa-external-link-alt"></i>
+                    <a href="https://portswigger.net/web-security/ssrf" target="_blank">PortSwigger - SSRF Guide</a>
+                </li>
+                <li>
+                    <i class="fas fa-external-link-alt"></i>
+                    <a href="https://cwe.mitre.org/data/definitions/918.html" target="_blank">CWE-918: Server-Side Request Forgery</a>
+                </li>
+                {% endif %}
+            </ul>
+        </div>
+    </div>
+    
+    <script>
+        const findingData = {{ finding|tojson }};
+        
+        function copyToClipboard(elementId) {
+            const element = document.getElementById(elementId);
+            const text = element.textContent;
+            
+            navigator.clipboard.writeText(text).then(() => {
+                alert('✅ Đã sao chép POC vào clipboard!');
+            }).catch(err => {
+                alert('❌ Không thể sao chép: ' + err);
+            });
+        }
+        
+        // Run all exploits at once
+        async function runAllExploits() {
+            showExploitProgress('Running All Exploits');
+            clearLog();
+            addLog('🚀 Bắt đầu chạy TẤT CẢ exploits...');
+            addLog('📍 Target: ' + findingData.affected_url);
+            addLog('📝 Parameter: ' + findingData.parameter);
+            addLog('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            
+            const allResults = {
+                internal_scan: null,
+                cloud_deep_dive: null,
+                container_discovery: null,
+                database_test: null
+            };
+            
+            // Run all exploits in parallel
+            try {
+                addLog('⏳ Running 4 exploits in parallel...');
+                
+                const promises = [
+                    // Internal Scan with timeout
+                    Promise.race([
+                        fetch('/api/exploit/internal_scan', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                target_url: findingData.affected_url,
+                                parameter: findingData.parameter,
+                                method: findingData.method
+                            })
+                        }).then(r => {
+                            addLog('📥 Internal Scan response received...');
+                            return r.json();
+                        }).then(data => {
+                        addLog('✅ Internal Scan data parsed successfully');
+                        allResults.internal_scan = data;
+                        const count = data.results?.length || 0;
+                        addLog('✅ Internal Scan completed: ' + count + ' services found');
+                        if (count > 0) {
+                            data.results.forEach((r, i) => {
+                                addLog(`  └─ ${r.container_ip}:${r.port} → ${r.service} (${r.container_name})`);
+                            });
+                        } else {
+                            addLog('  ⚠️ No internal services found');
+                            addLog('  💡 Check if services are on different network or SSRF timeout too short');
+                        }
+                    }).catch(err => {
+                        addLog('❌ Internal Scan error: ' + err.message);
+                        addLog('  💡 This exploit may have timed out or returned invalid JSON');
+                        allResults.internal_scan = {success: false, results: [], error: err.message};
+                    }),
+                        // Timeout after 60 seconds
+                        new Promise((_, reject) => 
+                            setTimeout(() => reject(new Error('Internal Scan timeout (60s) - server may still be scanning')), 60000)
+                        )
+                    ]).catch(err => {
+                        addLog('❌ Internal Scan error: ' + err.message);
+                        addLog('  💡 Scan took too long or server error');
+                        allResults.internal_scan = {success: false, results: [], error: err.message};
+                    }),
+                    
+                    fetch('/api/exploit/cloud_deep_dive', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            target_url: findingData.affected_url,
+                            parameter: findingData.parameter,
+                            method: findingData.method
+                        })
+                    }).then(r => r.json()).then(data => {
+                        allResults.cloud_deep_dive = data;
+                        const count = data.results?.length || 0;
+                        addLog('✅ Cloud Deep Dive completed: ' + count + ' metadata endpoints');
+                        if (count > 0) {
+                            data.results.forEach((r, i) => {
+                                addLog(`  └─ ${r.cloud}: ${r.endpoint}`);
+                            });
+                        }
+                    }).catch(err => {
+                        addLog('❌ Cloud Deep Dive error: ' + err.message);
+                        allResults.cloud_deep_dive = {success: false, results: []};
+                    }),
+                    
+                    fetch('/api/exploit/container_discovery', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            target_url: findingData.affected_url,
+                            parameter: findingData.parameter,
+                            method: findingData.method
+                        })
+                    }).then(r => r.json()).then(data => {
+                        allResults.container_discovery = data;
+                        const count = data.results?.length || 0;
+                        addLog('✅ Container Discovery completed: ' + count + ' container services');
+                        if (count > 0) {
+                            data.results.forEach((r, i) => {
+                                addLog(`  └─ ${r.type}: ${r.endpoint}`);
+                            });
+                        }
+                    }).catch(err => {
+                        addLog('❌ Container Discovery error: ' + err.message);
+                        allResults.container_discovery = {success: false, results: []};
+                    }),
+                    
+                    fetch('/api/exploit/database_test', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            target_url: findingData.affected_url,
+                            parameter: findingData.parameter,
+                            method: findingData.method
+                        })
+                    }).then(r => r.json()).then(data => {
+                        allResults.database_test = data;
+                        const count = data.results?.length || 0;
+                        addLog('✅ Database Testing completed: ' + count + ' databases found');
+                        if (count > 0) {
+                            data.results.forEach((r, i) => {
+                                // Parse URL to get IP:port (e.g., redis://127.0.0.1:6379 → 127.0.0.1:6379)
+                                let urlDisplay = r.url || 'unknown';
+                                try {
+                                    const match = urlDisplay.match(/:\/\/([^/]+)/);
+                                    if (match) urlDisplay = match[1];
+                                } catch (e) {}
+                                addLog(`  └─ ${r.database}: ${urlDisplay} (${r.status.split('(')[0].trim()})`);
+                            });
+                        }
+                    }).catch(err => {
+                        addLog('❌ Database Testing error: ' + err.message);
+                        allResults.database_test = {success: false, results: []};
+                    })
+                ];
+                
+                await Promise.all(promises);
+                
+                addLog('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                addLog('🎉 ALL EXPLOITS COMPLETED!');
+                
+                // Wait a bit for user to see completion, then hide progress and show results
+                setTimeout(() => {
+                    hideExploitProgress();
+                    showAllExploitResults(allResults);
+                }, 1000);
+                
+            } catch (error) {
+                addLog('❌ Error: ' + error.message);
+                hideExploitProgress();
+                alert('❌ Lỗi khi chạy exploits: ' + error.message);
+            }
+        }
+        
+        function showAllExploitResults(allResults) {
+            const resultsDiv = document.getElementById('exploitResults');
+            const resultsContent = document.getElementById('exploitResultsContent');
+            const summaryDiv = document.getElementById('exploitSummary');
+            
+            resultsDiv.style.display = 'block';
+            
+            // Count totals
+            let totalFound = 0;
+            let successCount = 0;
+            
+            Object.values(allResults).forEach(result => {
+                if (result && result.results) totalFound += result.results.length;
+                if (result && result.success) successCount++;
+            });
+            
+            // Build summary
+            let summaryHtml = `<h4 style="margin: 0 0 10px 0;">📋 TỔNG KẾT KẾT QUẢ</h4>`;
+            summaryHtml += `<p style="margin: 0;"><strong>Exploits đã chạy:</strong> 4/4</p>`;
+            summaryHtml += `<p style="margin: 5px 0;"><strong>Thành công:</strong> ${successCount}/4</p>`;
+            summaryHtml += `<p style="margin: 5px 0;"><strong>Tổng số mục tìm được:</strong> ${totalFound}</p>`;
+            summaryHtml += `<hr style="margin: 15px 0; border: 1px solid rgba(0,0,0,0.2);">`;
+            
+            // Individual results
+            const exploitNames = {
+                'internal_scan': '🔍 Internal Network Scan',
+                'cloud_deep_dive': '☁️ Cloud Deep Dive',
+                'container_discovery': '🐳 Container Discovery',
+                'database_test': '💾 Database Testing'
+            };
+            
+            // Build collapsible sections for each exploit
+            Object.entries(allResults).forEach(([key, data]) => {
+                const name = exploitNames[key];
+                const status = data.success ? '✅' : '⚠️';
+                const count = data.results?.length || 0;
+                summaryHtml += `<p style="margin: 8px 0;"><strong>${name}:</strong> ${status} ${count} items</p>`;
+            });
+            
+            summaryDiv.innerHTML = summaryHtml;
+            
+            // Build detailed collapsible sections
+            let detailsHtml = '<div style="margin-top: 20px;">';
+            
+            Object.entries(allResults).forEach(([key, data]) => {
+                const name = exploitNames[key];
+                const count = data.results?.length || 0;
+                const statusIcon = data.success ? '✅' : '⚠️';
+                const isOpen = count > 0 ? 'open' : '';
+                
+                detailsHtml += `
+                    <details style="margin-bottom: 15px; border: 1px solid rgba(0,0,0,0.1); border-radius: 8px; padding: 10px; background: rgba(255,255,255,0.05);" ${isOpen}>
+                        <summary style="cursor: pointer; font-weight: bold; padding: 5px; user-select: none;">
+                            ${statusIcon} ${name} (${count} items)
+                        </summary>
+                        <div style="margin-top: 10px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 4px;">
+                            <p style="margin: 0 0 10px 0;"><strong>Status:</strong> ${data.success ? 'Success ✅' : 'No Results ⚠️'}</p>
+                            <p style="margin: 0 0 10px 0;"><strong>Message:</strong> ${data.message || 'N/A'}</p>
+                `;
+                
+                if (data.results && data.results.length > 0) {
+                    detailsHtml += '<h4 style="margin: 15px 0 10px 0;">Chi tiết kết quả:</h4>';
+                    data.results.forEach((result, idx) => {
+                        const resultJson = JSON.stringify(result, null, 2);
+                        detailsHtml += `
+                            <details style="margin: 10px 0; padding: 10px; background: rgba(0,0,0,0.3); border-radius: 4px;">
+                                <summary style="cursor: pointer; font-weight: bold;">📌 Result #${idx + 1}</summary>
+                                <pre style="margin: 10px 0 0 0; white-space: pre-wrap; font-size: 12px; color: #00ff88;">${resultJson}</pre>
+                            </details>
+                        `;
+                    });
+                } else {
+                    detailsHtml += '<p style="margin: 10px 0 0 0; opacity: 0.7;">❌ Không tìm thấy kết quả</p>';
+                }
+                
+                detailsHtml += '</div></details>';
+            });
+            
+            detailsHtml += '</div>';
+            resultsContent.innerHTML = detailsHtml;
+        }
+        
+        // Exploitation functions
+        function exploitInternalScan() {
+            showExploitProgress('Internal Network Scan');
+            addLog('🚀 Bắt đầu Internal Network Scan');
+            addLog(`📍 Target: ${findingData.affected_url}`);
+            addLog(`📝 Parameter: ${findingData.parameter}`);
+            addLog('🔍 Scanning common internal IPs: 127.0.0.1, 172.17.0.x, 10.0.0.x, 192.168.x.x');
+            addLog('🎯 Testing common ports: 80, 443, 8080, 5432, 3306, 6379, 9200...');
+            
+            fetch('/api/exploit/internal_scan', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    target_url: findingData.affected_url,
+                    parameter: findingData.parameter,
+                    method: findingData.method
+                })
+            })
+            .then(response => {
+                addLog('📥 Nhận response từ server...');
+                return response.json();
+            })
+            .then(data => {
+                addLog(`✅ Hoàn thành! Found ${data.results?.length || 0} open ports`);
+                hideExploitProgress();
+                showExploitResults(data, 'Internal Network Scan');
+            })
+            .catch(error => {
+                addLog('❌ Lỗi: ' + error.message);
+                hideExploitProgress();
+                alert('❌ Lỗi khai thác: ' + error.message);
+            });
+        }
+        
+        function exploitCloudDeepDive() {
+            showExploitProgress('Cloud Deep Dive');
+            addLog('☁️ Bắt đầu Cloud Metadata Deep Dive');
+            addLog(`📍 Target: ${findingData.affected_url}`);
+            addLog('🔍 Testing AWS metadata endpoints...');
+            addLog('🔍 Testing GCP metadata endpoints...');
+            addLog('🔍 Testing Azure metadata endpoints...');
+            
+            fetch('/api/exploit/cloud_deep_dive', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    target_url: findingData.affected_url,
+                    parameter: findingData.parameter,
+                    method: findingData.method
+                })
+            })
+            .then(response => {
+                addLog('📥 Nhận response từ server...');
+                return response.json();
+            })
+            .then(data => {
+                addLog(`✅ Hoàn thành! Found ${data.results?.length || 0} accessible endpoints`);
+                hideExploitProgress();
+                showExploitResults(data, 'Cloud Deep Dive');
+            })
+            .catch(error => {
+                addLog('❌ Lỗi: ' + error.message);
+                hideExploitProgress();
+                alert('❌ Lỗi khai thác: ' + error.message);
+            });
+        }
+        
+        function exploitContainerDiscovery() {
+            showExploitProgress('Container Discovery');
+            addLog('🐳 Bắt đầu Container/Docker Discovery');
+            addLog(`📍 Target: ${findingData.affected_url}`);
+            addLog('🔍 Testing Docker API (port 2375, 2376)...');
+            addLog('🔍 Testing Kubernetes Kubelet (port 10250)...');
+            addLog('🔍 Testing Consul service discovery...');
+            
+            fetch('/api/exploit/container_discovery', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    target_url: findingData.affected_url,
+                    parameter: findingData.parameter,
+                    method: findingData.method
+                })
+            })
+            .then(response => {
+                addLog('📥 Nhận response từ server...');
+                return response.json();
+            })
+            .then(data => {
+                addLog(`✅ Hoàn thành! Found ${data.results?.length || 0} container services`);
+                hideExploitProgress();
+                showExploitResults(data, 'Container Discovery');
+            })
+            .catch(error => {
+                addLog('❌ Lỗi: ' + error.message);
+                hideExploitProgress();
+                alert('❌ Lỗi khai thác: ' + error.message);
+            });
+        }
+        
+        function exploitDatabaseTest() {
+            showExploitProgress('Database Testing');
+            addLog('💾 Bắt đầu Database Connection Testing');
+            addLog(`📍 Target: ${findingData.affected_url}`);
+            addLog('🔍 Testing Redis (port 6379)...');
+            addLog('🔍 Testing PostgreSQL (port 5432)...');
+            addLog('🔍 Testing MySQL (port 3306)...');
+            addLog('🔍 Testing MongoDB (port 27017)...');
+            addLog('🔍 Testing Elasticsearch (port 9200)...');
+            
+            fetch('/api/exploit/database_test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    target_url: findingData.affected_url,
+                    parameter: findingData.parameter,
+                    method: findingData.method
+                })
+            })
+            .then(response => {
+                addLog('📥 Nhận response từ server...');
+                return response.json();
+            })
+            .then(data => {
+                addLog(`✅ Hoàn thành! Found ${data.results?.length || 0} accessible databases`);
+                hideExploitProgress();
+                showExploitResults(data, 'Database Testing');
+            })
+            .catch(error => {
+                addLog('❌ Lỗi: ' + error.message);
+                hideExploitProgress();
+                alert('❌ Lỗi khai thác: ' + error.message);
+            });
+        }
+        
+        function addLog(message) {
+            const logDiv = document.getElementById('exploitLog');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.style.marginBottom = '4px';
+            logEntry.innerHTML = `<span style="color: #60a5fa;">[${timestamp}]</span> <span style="color: #ffffff;">${message}</span>`;
+            logDiv.appendChild(logEntry);
+            logDiv.scrollTop = logDiv.scrollHeight; // Auto-scroll to bottom
+        }
+        
+        function clearLog() {
+            document.getElementById('exploitLog').innerHTML = '';
+        }
+        
+        function showExploitProgress(type) {
+            const progressDiv = document.getElementById('exploitProgress');
+            const statusP = document.getElementById('exploitStatus');
+            progressDiv.style.display = 'block';
+            statusP.textContent = `Đang khai thác: ${type}...`;
+            
+            clearLog(); // Clear previous logs
+            document.getElementById('exploitResults').style.display = 'none';
+        }
+        
+        function hideExploitProgress() {
+            document.getElementById('exploitProgress').style.display = 'none';
+        }
+        
+        function showExploitResults(data, exploitType) {
+            const resultsDiv = document.getElementById('exploitResults');
+            const resultsContent = document.getElementById('exploitResultsContent');
+            const summaryDiv = document.getElementById('exploitSummary');
+            
+            resultsDiv.style.display = 'block';
+            
+            // Show summary with detailed message
+            let summaryHtml = `<h4 style="margin: 0 0 10px 0;">📋 ${exploitType} - Summary</h4>`;
+            summaryHtml += `<p style="margin: 0;"><strong>Status:</strong> ${data.success ? '✅ Success' : '⚠️ No Results'}</p>`;
+            
+            // Display message with line breaks
+            const message = (data.message || 'No message').replace(/\n/g, '<br>');
+            summaryHtml += `<p style="margin: 10px 0; line-height: 1.6;">${message}</p>`;
+            
+            if (data.note) {
+                summaryHtml += `<p style="margin: 10px 0; font-style: italic; opacity: 0.8; font-size: 0.9em;">ℹ️ ${data.note}</p>`;
+            }
+            
+            if (data.results && data.results.length > 0) {
+                summaryHtml += `<p style="margin: 10px 0 0 0;"><strong>✅ Found:</strong> ${data.results.length} items</p>`;
+            }
+            
+            summaryDiv.innerHTML = summaryHtml;
+            
+            // Show detailed results
+            if (data.results && data.results.length > 0) {
+                let detailsHtml = '';
+                
+                data.results.forEach((result, index) => {
+                    detailsHtml += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+                    detailsHtml += `Result #${index + 1}:\n`;
+                    detailsHtml += JSON.stringify(result, null, 2);
+                });
+                
+                resultsContent.textContent = detailsHtml;
+            } else {
+                resultsContent.textContent = data.error || '(No detailed results)';
+            }
+        }
+    </script>
+</body>
+</html>

@@ -723,8 +723,12 @@ class ExternalCallbackDetector:
                 response = self.session.request(method, target_url, **kwargs)
                 status_codes[method] = response.status_code
                 
-                # Method is supported if NOT 405 (Method Not Allowed) or 501 (Not Implemented)
-                if response.status_code not in [405, 501]:
+                # ✅ FIX: Method is supported ONLY if:
+                # 1. Status code is successful (200-399) - endpoint exists and accepts method
+                # 2. NOT 404 (Not Found) - endpoint doesn't exist
+                # 3. NOT 405 (Method Not Allowed) - endpoint exists but method not allowed
+                # 4. NOT 501 (Not Implemented) - method not implemented
+                if 200 <= response.status_code < 400:
                     supported_methods.append(method)
                     print(f"    ✅ {method:6} - Status {response.status_code} - SUPPORTED")
                     
@@ -734,8 +738,12 @@ class ExternalCallbackDetector:
                         content_type = 'json'
                     elif 'application/x-www-form-urlencoded' in resp_content_type:
                         content_type = 'form'
+                elif response.status_code == 404:
+                    print(f"    ⚠️  {method:6} - Status {response.status_code} - ENDPOINT NOT FOUND")
+                elif response.status_code in [405, 501]:
+                    print(f"    ❌ {method:6} - Status {response.status_code} - METHOD NOT ALLOWED")
                 else:
-                    print(f"    ❌ {method:6} - Status {response.status_code} - NOT ALLOWED")
+                    print(f"    ❌ {method:6} - Status {response.status_code} - ERROR/UNAUTHORIZED")
                     
                     # Check Allow header
                     if response.status_code == 405:
@@ -754,10 +762,16 @@ class ExternalCallbackDetector:
             allowed_methods = [m.strip().upper() for m in allow_header.split(',')]
             supported_methods.extend(allowed_methods)
         
-        # If no methods detected, assume GET is available
+        # ✅ FIX: If no methods detected, check if endpoint exists at all
         if not supported_methods:
-            print(f"\n[!] ⚠️  No methods explicitly supported, assuming GET")
-            supported_methods = ['GET']
+            # Check if ALL methods returned 404 - endpoint doesn't exist
+            all_404 = all(status_codes.get(m) == 404 for m in test_methods if m in status_codes)
+            if all_404:
+                print(f"\n[!] ❌ ENDPOINT NOT FOUND - All methods returned 404")
+                print(f"[!] ⚠️  This endpoint does not exist, skipping SSRF tests")
+            else:
+                print(f"\n[!] ⚠️  No methods explicitly supported, assuming GET")
+                supported_methods = ['GET']
         
         result = {
             'target_url': target_url,
@@ -1168,10 +1182,16 @@ class ExternalCallbackDetector:
                     print(f"    (None matched test_id: {test_id})")
         
         # Analyze results
-        is_vulnerable = total_callbacks > 0
-        
-        # Get successful attempt details
+        # ✅ FIX: Chỉ vulnerable khi có callback VÀ endpoint phản hồi thành công (200-399)
         successful_attempt = next((a for a in all_attempts if a['callbacks_received'] > 0), None)
+        
+        # Check if endpoint actually responded successfully
+        has_valid_response = False
+        if successful_attempt and successful_attempt.get('initial_response'):
+            response = successful_attempt['initial_response']
+            has_valid_response = response.get('status_code', 0) in range(200, 400)
+        
+        is_vulnerable = total_callbacks > 0 and has_valid_response
         
         result = {
             'target_url': target_url,
@@ -1179,6 +1199,7 @@ class ExternalCallbackDetector:
             'method': method,
             'is_vulnerable': is_vulnerable,
             'callbacks_received': total_callbacks,
+            'has_valid_response': has_valid_response,
             'all_attempts': all_attempts,
             'successful_address': successful_attempt['address'] if successful_attempt else None,
             'callback_url': successful_attempt['callback_url'] if successful_attempt else all_attempts[-1]['callback_url'],
@@ -1201,11 +1222,15 @@ class ExternalCallbackDetector:
                     print(f"    User-Agent: {cb.get('user_agent', 'N/A')}")
                     print(f"    Timestamp: {cb.get('timestamp', 'N/A')}")
         else:
-            print(f"[-] No SSRF detected (callback not received or blocked)")
-            print(f"    Possible reasons:")
-            print(f"    - URL parameter is validated/whitelisted")
-            print(f"    - Outbound connections are blocked by firewall")
-            print(f"    - Application doesn't fetch external URLs")
+            print(f"[-] No SSRF detected")
+            if total_callbacks > 0 and not has_valid_response:
+                print(f"    ⚠️  Received {total_callbacks} callback(s) but endpoint returned error/not found")
+                print(f"    This is likely a false positive (endpoint doesn't exist)")
+            else:
+                print(f"    Possible reasons:")
+                print(f"    - URL parameter is validated/whitelisted")
+                print(f"    - Outbound connections are blocked by firewall")
+                print(f"    - Application doesn't fetch external URLs")
             print(f"    Tried addresses: {', '.join([a['address'] for a in all_attempts])}")
         
         self.test_results.append(result)

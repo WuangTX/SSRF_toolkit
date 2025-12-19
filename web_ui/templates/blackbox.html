@@ -192,16 +192,23 @@
         
         .radio-item {
             display: flex;
-            align-items: center;
-            padding: 12px 20px;
+            flex-direction: column;
+            align-items: flex-start;
+            padding: 16px 20px;
             background: #f8f9fa;
-            border-radius: 8px;
+            border: 2px solid transparent;
+            border-radius: 10px;
             cursor: pointer;
             transition: all 0.3s;
+            min-width: 280px;
+            flex: 1;
         }
         
         .radio-item:hover {
             background: #e9ecef;
+            border-color: #dee2e6;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
         }
         
         .radio-item input[type="radio"] {
@@ -211,15 +218,49 @@
             cursor: pointer;
         }
         
+        .radio-item label {
+            display: flex;
+            align-items: center;
+            font-weight: 600;
+            font-size: 1.05em;
+            cursor: pointer;
+        }
+        
         .radio-item.selected {
             background: #e74c3c;
             color: white;
+            border-color: #c0392b;
+            box-shadow: 0 4px 12px rgba(231, 76, 60, 0.3);
+        }
+        
+        .radio-item.selected:hover {
+            background: #d62c1a;
+            border-color: #a93226;
+        }
+        
+        .radio-item.selected p {
+            color: rgba(255, 255, 255, 0.9) !important;
         }
         
         .help-text {
             font-size: 0.9em;
             color: #666;
             margin-top: 5px;
+        }
+        
+        .alert {
+            padding: 14px;
+            border-radius: 8px;
+            margin-top: 15px;
+            line-height: 1.6;
+        }
+        
+        .alert p {
+            margin: 0;
+        }
+        
+        .alert strong {
+            font-weight: 600;
         }
         
         .action-buttons {
@@ -330,44 +371,58 @@
                     <h3>📡 Input Source</h3>
                     
                     <div class="form-group">
-                        <label>Chọn nguồn dữ liệu</label>
+                        <label>Chọn loại dữ liệu đầu vào</label>
                         <div class="radio-group">
-                            <div class="radio-item selected" onclick="selectInputSource('manual')">
-                                <input type="radio" name="input_source" value="manual" checked>
-                                <label>Manual URL</label>
+                            <div class="radio-item" onclick="selectInputSource('api')">
+                                <input type="radio" name="input_source" value="api">
+                                <label>🎯 Specific API Endpoint</label>
+                                <p style="font-size: 0.85em; color: #666; margin: 5px 0 0 0;">
+                                    Test trực tiếp 1 API endpoint cụ thể (VD: /api/products/5/fetch_review)
+                                </p>
                             </div>
-                            <div class="radio-item" onclick="selectInputSource('burp')">
-                                <input type="radio" name="input_source" value="burp">
-                                <label>Burp/HAR File</label>
+                            <div class="radio-item selected" onclick="selectInputSource('domain')">
+                                <input type="radio" name="input_source" value="domain" checked>
+                                <label>🌐 Domain/Website</label>
+                                <p style="font-size: 0.85em; color: #666; margin: 5px 0 0 0;">
+                                    Discover endpoints từ domain (VD: https://example.com)
+                                </p>
                             </div>
-                            <div class="radio-item" onclick="selectInputSource('swagger')">
-                                <input type="radio" name="input_source" value="swagger">
-                                <label>Swagger/OpenAPI</label>
+                            <div class="radio-item" onclick="selectInputSource('traffic')">
+                                <input type="radio" name="input_source" value="traffic">
+                                <label>📦 Traffic Capture (Burp/HAR)</label>
+                                <p style="font-size: 0.85em; color: #666; margin: 5px 0 0 0;">
+                                    Upload file chứa NHIỀU requests đã capture (Chrome HAR, Burp export)
+                                </p>
                             </div>
                         </div>
                     </div>
                     
-                    <div id="manual_input" class="form-group">
-                        <label>Target URL *</label>
-                        <input type="text" name="target" placeholder="https://api.example.com" required>
-                        <div class="help-text">URL của API hoặc web app cần scan</div>
+                    <!-- Unified Target Input (changes based on input_source) -->
+                    <div id="target_input" class="form-group">
+                        <label id="target_label">Domain/Website URL *</label>
+                        <input type="text" name="target" id="target_url" placeholder="https://example.com">
+                        <div id="target_help" class="help-text">
+                            <strong>Ví dụ:</strong> https://quangtx.io.vn hoặc https://api.example.com<br>
+                            ℹ️ Domain chung → Cần discovery để tìm endpoints
+                        </div>
                     </div>
                     
-                    <div id="file_input" class="form-group" style="display: none;">
-                        <label>Upload File (HAR/Burp JSON)</label>
+                    <!-- Traffic Capture Input -->
+                    <div id="traffic_input" class="form-group" style="display: none;">
+                        <label>Upload Traffic File (HAR/Burp JSON)</label>
                         <div class="file-upload" onclick="document.getElementById('traffic_file').click()">
                             <input type="file" id="traffic_file" name="traffic_file" accept=".har,.json">
                             <p>📁 Click để chọn file hoặc kéo thả vào đây</p>
-                            <p class="help-text">Hỗ trợ: Chrome HAR, Burp Suite JSON export</p>
                         </div>
-                    </div>
-                    
-                    <div id="swagger_input" class="form-group" style="display: none;">
-                        <label>Swagger/OpenAPI URL hoặc File</label>
-                        <input type="text" name="swagger_url" placeholder="https://api.example.com/swagger.json">
-                        <div class="file-upload" onclick="document.getElementById('swagger_file').click()" style="margin-top: 15px;">
-                            <input type="file" id="swagger_file" name="swagger_file" accept=".json,.yaml,.yml">
-                            <p>📄 Hoặc upload file Swagger/OpenAPI</p>
+                        <div class="alert" style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 12px; margin-top: 15px; border-radius: 6px;">
+                            <p style="margin: 0; color: #856404; font-size: 0.9em; line-height: 1.6;">
+                                <strong>💡 HAR/Burp file là gì?</strong><br>
+                                • File chứa <strong>NHIỀU requests/responses</strong> khi browse website<br>
+                                • <strong>Cách tạo HAR:</strong> Chrome DevTools → Network → Right-click → "Save all as HAR"<br>
+                                • <strong>Cách tạo Burp:</strong> Burp Suite → Proxy → HTTP History → Select all → Right-click → "Save items"<br>
+                                • Tool sẽ extract <strong>tất cả endpoints</strong> từ file (có thể 50-200+ endpoints)<br>
+                                • Bao gồm: URLs, headers, cookies, POST data, authentication tokens
+                            </p>
                         </div>
                     </div>
                 </div>
@@ -401,28 +456,6 @@
             
             <!-- TAB 2: Payload Strategy -->
             <div id="tab2" class="tab-content">
-                <div class="config-section">
-                    <h3>🎯 Target Types</h3>
-                    <div class="checkbox-group">
-                        <div class="checkbox-item">
-                            <input type="checkbox" id="target_http" name="target_types" value="http" checked>
-                            <label for="target_http">HTTP Endpoints</label>
-                        </div>
-                        <div class="checkbox-item">
-                            <input type="checkbox" id="target_internal" name="target_types" value="internal_service">
-                            <label for="target_internal">Internal Services</label>
-                        </div>
-                        <div class="checkbox-item">
-                            <input type="checkbox" id="target_cloud" name="target_types" value="cloud_metadata">
-                            <label for="target_cloud">Cloud Metadata (AWS/GCP/Azure)</label>
-                        </div>
-                        <div class="checkbox-item">
-                            <input type="checkbox" id="target_container" name="target_types" value="container_local">
-                            <label for="target_container">Container Services</label>
-                        </div>
-                    </div>
-                </div>
-                
                 <div class="config-section">
                     <h3>💣 Attack Depth</h3>
                     <div class="radio-group">
@@ -467,14 +500,6 @@
                             <input type="checkbox" id="payload_header" name="payload_strategies" value="header_injection">
                             <label for="payload_header">Header Injection</label>
                         </div>
-                        <div class="checkbox-item">
-                            <input type="checkbox" id="payload_blind" name="payload_strategies" value="blind_ssrf" checked>
-                            <label for="payload_blind">Blind SSRF (HTTP/DNS Callback)</label>
-                            <p style="font-size: 0.85em; color: #2ecc71; margin: 5px 0 0 25px; font-weight: 500;">
-                                ✅ Hỗ trợ: <strong>HTTP callback</strong> (port 8888) + <strong>DNS callback</strong> (port 53)
-                                <br>📡 Callback server: http://40.82.145.240:8888
-                            </p>
-                        </div>
                     </div>
                 </div>
                 
@@ -486,8 +511,16 @@
             
             <!-- TAB 3: Scan Config -->
             <div id="tab3" class="tab-content">
+                <div class="alert" style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin-bottom: 20px; border-radius: 8px;">
+                    <h4 style="margin: 0 0 10px 0; color: #856404; font-size: 1.1em;">💡 Quy trình 2 giai đoạn</h4>
+                    <p style="margin: 0; color: #856404; line-height: 1.6;">
+                        <strong>Giai đoạn 1 (Scan này):</strong> Tìm kiếm SSRF vulnerabilities<br>
+                        <strong>Giai đoạn 2 (Sau khi tìm thấy):</strong> Vào chi tiết finding → Chọn khai thác (Internal Scan, Cloud Metadata, etc.)
+                    </p>
+                </div>
+                
                 <div class="config-section">
-                    <h3>⚙️ Scan Methods</h3>
+                    <h3>⚙️ Scan Methods (Tìm lỗ hổng)</h3>
                     <div class="checkbox-group">
                         <div class="checkbox-item">
                             <input type="checkbox" id="param_fuzzing" name="scan_methods" value="parameters" checked>
@@ -500,45 +533,39 @@
                         <div class="checkbox-item">
                             <input type="checkbox" id="callback_test" name="scan_methods" value="callback" checked>
                             <label for="callback_test">Callback Testing (HTTP + DNS)</label>
-                        </div>
-                        <div class="checkbox-item">
-                            <input type="checkbox" id="internal_scan" name="scan_methods" value="internal">
-                            <label for="internal_scan">Internal Network Scan</label>
+                            <p style="font-size: 0.85em; color: #2ecc71; margin: 5px 0 0 25px; font-weight: 500;">
+                                ✅ HTTP callback (port 8888) + DNS callback (port 53)
+                                <br>📡 Callback server: http://40.82.145.240:8888
+                            </p>
                         </div>
                     </div>
                 </div>
                 
                 <div class="config-section">
-                    <h3>📡 Callback Type Selection</h3>
-                    <div class="alert alert-info">
-                        💡 Chọn loại callback server để phát hiện SSRF
-                    </div>
+                    <h3>🎯 Detection Targets</h3>
+                    <p style="color: #666; margin-bottom: 15px; font-size: 0.95em;">
+                        Chọn loại endpoint/service để test SSRF vulnerability
+                    </p>
                     <div class="checkbox-group">
                         <div class="checkbox-item">
-                            <input type="checkbox" id="callback_http" name="callback_types" value="http" checked>
-                            <label for="callback_http">HTTP Callback (Standard SSRF)</label>
-                            <p style="font-size: 0.85em; color: #666; margin: 5px 0 0 25px;">
-                                ✅ Best for: APIs trả về fetched content<br>
-                                🔧 Method: test_ssrf()
-                            </p>
+                            <input type="checkbox" id="target_http" name="target_types" value="http" checked>
+                            <label for="target_http">HTTP Endpoints (Public APIs)</label>
                         </div>
                         <div class="checkbox-item">
-                            <input type="checkbox" id="callback_dns" name="callback_types" value="dns" checked>
-                            <label for="callback_dns">DNS Callback (Blind SSRF)</label>
+                            <input type="checkbox" id="target_cloud" name="target_types" value="cloud_metadata" checked>
+                            <label for="target_cloud">Cloud Metadata (AWS/GCP/Azure)</label>
                             <p style="font-size: 0.85em; color: #666; margin: 5px 0 0 25px;">
-                                ✅ Best for: Blind SSRF (no response content)<br>
-                                🔧 Method: test_blind_ssrf_dns()<br>
-                                💪 Bypasses HTTP-only firewalls
+                                Test access to 169.254.169.254, metadata.google.internal
                             </p>
                         </div>
-                        <div class="checkbox-item">
-                            <input type="checkbox" id="callback_cloud" name="callback_types" value="cloud_metadata">
-                            <label for="callback_cloud">Cloud Metadata Test</label>
-                            <p style="font-size: 0.85em; color: #666; margin: 5px 0 0 25px;">
-                                ☁️ Test AWS/GCP/Azure metadata endpoints<br>
-                                🔧 Method: test_cloud_metadata()
-                            </p>
-                        </div>
+                    </div>
+                    <div class="alert" style="background: #e7f3ff; border-left: 4px solid #2196F3; padding: 12px; margin-top: 15px; border-radius: 6px;">
+                        <p style="margin: 0; color: #1976D2; font-size: 0.9em;">
+                            <strong>⚡ Khai thác nâng cao:</strong> Sau khi phát hiện SSRF, vào chi tiết finding để chạy:<br>
+                            • Internal Network Scan (quét services nội bộ)<br>
+                            • Container Services Discovery<br>
+                            • Database Access Testing
+                        </p>
                     </div>
                 </div>
                 
@@ -573,8 +600,8 @@
                             <label for="scope_protection">Scope Protection</label>
                         </div>
                         <div class="checkbox-item">
-                            <input type="checkbox" id="skip_validation" name="skip_validation">
-                            <label for="skip_validation">Skip Target Validation</label>
+                            <input type="checkbox" id="skip_validation" name="skip_validation" checked>
+                            <label for="skip_validation">Skip Target Validation (Recommended)</label>
                         </div>
                     </div>
                     <div class="form-group" style="margin-top: 15px;">
@@ -589,8 +616,9 @@
                 </div>
                 
                 <div class="alert alert-info" style="margin-top: 15px;">
-                    💡 <strong>Skip Target Validation:</strong> Bỏ qua kiểm tra kết nối đến target trước khi scan. 
-                    Hữu ích khi target tạm thời không accessible hoặc đằng sau firewall/VPN.
+                    💡 <strong>Skip Target Validation:</strong> Bỏ qua kiểm tra kết nối trước khi scan.<br>
+                    ✅ <strong>Recommended:</strong> Target có thể tạm thời offline, đằng sau firewall, hoặc block health check requests.<br>
+                    ℹ️ Tool sẽ tiếp tục scan ngay cả khi không kết nối được lúc đầu.
                 </div>
                 
                 <div class="action-buttons">
@@ -656,10 +684,126 @@
             });
             event.currentTarget.classList.add('selected');
             
-            // Show/hide input sections
-            document.getElementById('manual_input').style.display = source === 'manual' ? 'block' : 'none';
-            document.getElementById('file_input').style.display = source === 'burp' ? 'block' : 'none';
-            document.getElementById('swagger_input').style.display = source === 'swagger' ? 'block' : 'none';
+            // ✅ Update radio button checked state
+            document.querySelector('input[name="input_source"][value="' + source + '"]').checked = true;
+            
+            // Get elements
+            const targetInput = document.getElementById('target_input');
+            const targetLabel = document.getElementById('target_label');
+            const targetHelp = document.getElementById('target_help');
+            const targetUrl = document.getElementById('target_url');
+            const trafficInput = document.getElementById('traffic_input');
+            
+            // Update label, placeholder, and help text based on source
+            if (source === 'api') {
+                // API mode
+                targetInput.style.display = 'block';
+                trafficInput.style.display = 'none';
+                
+                targetLabel.textContent = '🎯 API Endpoint URL *';
+                targetUrl.placeholder = 'https://api.example.com/v1/users/123/profile';
+                targetHelp.innerHTML = `
+                    <strong>Ví dụ:</strong> https://quangtx.io.vn/api/products/5/fetch_review/<br>
+                    ℹ️ Endpoint cụ thể → Không cần discovery, test trực tiếp
+                `;
+            } else if (source === 'domain') {
+                // Domain mode
+                targetInput.style.display = 'block';
+                trafficInput.style.display = 'none';
+                
+                targetLabel.textContent = '🌐 Domain/Website URL *';
+                targetUrl.placeholder = 'https://example.com';
+                targetHelp.innerHTML = `
+                    <strong>Ví dụ:</strong> https://quangtx.io.vn hoặc https://api.example.com<br>
+                    ℹ️ Domain chung → Cần discovery để tìm endpoints
+                `;
+            } else if (source === 'traffic') {
+                // Traffic mode
+                targetInput.style.display = 'none';
+                trafficInput.style.display = 'block';
+            }
+            
+            // ✅ Auto Discovery logic based on input type:
+            const autoDiscoverySection = document.querySelector('.config-section:has(#auto_discovery)');
+            const discoveryInfo = document.getElementById('discovery_info');
+            
+            if (source === 'api') {
+                // ❌ Specific API → Hide discovery (không cần discover)
+                if (autoDiscoverySection) {
+                    autoDiscoverySection.style.display = 'none';
+                }
+                
+                // Show info message in API input
+                if (!discoveryInfo) {
+                    const apiInput = document.getElementById('api_input');
+                    const infoBox = document.createElement('div');
+                    infoBox.id = 'discovery_info';
+                    infoBox.className = 'alert';
+                    infoBox.style.cssText = 'background: #e3f2fd; border-left: 4px solid #2196f3; padding: 10px; margin-top: 12px; border-radius: 6px;';
+                    infoBox.innerHTML = `
+                        <p style="margin: 0; color: #0d47a1; font-size: 0.88em; line-height: 1.5;">
+                            <strong>ℹ️ Mode:</strong> Specific API Endpoint → Auto Discovery ẩn (test trực tiếp endpoint này)
+                        </p>
+                    `;
+                    apiInput.appendChild(infoBox);
+                }
+                
+            } else if (source === 'domain') {
+                // ✅ Domain → Show discovery (cần tìm endpoints)
+                if (autoDiscoverySection) {
+                    autoDiscoverySection.style.display = 'block';
+                }
+                if (discoveryInfo) discoveryInfo.remove();
+                
+            } else if (source === 'traffic') {
+                // ✅ Traffic file → Show discovery (optional, để discover thêm)
+                if (autoDiscoverySection) {
+                    autoDiscoverySection.style.display = 'block';
+                }
+                if (discoveryInfo) discoveryInfo.remove();
+            }
+        }
+        
+        function checkUrlAndToggleDiscovery() {
+            const targetInput = document.querySelector('input[name="target"]');
+            const autoDiscoverySection = document.querySelector('.config-section:has(#auto_discovery)');
+            
+            if (!targetInput || !autoDiscoverySection) return;
+            
+            const url = targetInput.value.trim();
+            
+            // Nếu chưa nhập gì → Show discovery
+            if (!url) {
+                autoDiscoverySection.style.display = 'block';
+                autoDiscoverySection.style.opacity = '1';
+                return;
+            }
+            
+            try {
+                const urlObj = new URL(url);
+                const path = urlObj.pathname;
+                
+                // ✅ Specific API endpoint (có path chi tiết) → Hide discovery
+                // Ví dụ: /api/products/5/fetch_review
+                if (path && path !== '/' && path.split('/').filter(p => p).length >= 2) {
+                    autoDiscoverySection.style.display = 'none';
+                    autoDiscoverySection.style.opacity = '0.5';
+                    
+                    // Uncheck all discovery checkboxes
+                    autoDiscoverySection.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+                        cb.checked = false;
+                    });
+                } else {
+                    // ❌ Domain only or root path → Show discovery
+                    // Ví dụ: https://quangtx.io.vn hoặc https://quangtx.io.vn/
+                    autoDiscoverySection.style.display = 'block';
+                    autoDiscoverySection.style.opacity = '1';
+                }
+            } catch (e) {
+                // Invalid URL, show discovery
+                autoDiscoverySection.style.display = 'block';
+                autoDiscoverySection.style.opacity = '1';
+            }
         }
         
         function selectAttackDepth(depth) {
@@ -697,6 +841,28 @@
         // Handle form submission
         document.getElementById('scanForm').addEventListener('submit', function(e) {
             e.preventDefault();
+            
+            // ✅ Validate target URL based on input source
+            const inputSource = document.querySelector('input[name="input_source"]:checked').value;
+            
+            if (inputSource === 'traffic') {
+                // Traffic capture - check if file is uploaded
+                const fileInput = document.getElementById('traffic_file');
+                if (!fileInput.files || fileInput.files.length === 0) {
+                    alert('❌ Vui lòng upload file HAR/Burp trước khi scan!');
+                    switchTab(1);
+                    return;
+                }
+            } else {
+                // API or Domain mode - validate target URL
+                const targetUrl = document.getElementById('target_url');
+                if (!targetUrl.value.trim()) {
+                    alert('❌ Vui lòng nhập Target URL!');
+                    targetUrl.focus();
+                    switchTab(1);
+                    return;
+                }
+            }
             
             const formData = new FormData(this);
             
@@ -745,12 +911,23 @@
             }
         });
         
-        document.getElementById('swagger_file')?.addEventListener('change', function(e) {
-            if (e.target.files.length > 0) {
-                const fileName = e.target.files[0].name;
-                e.target.parentElement.querySelector('p').textContent = '✅ Đã chọn: ' + fileName;
-            }
-        });
+        // ✅ Real-time URL checking for Auto Discovery toggle
+        const targetInput = document.querySelector('input[name="target"]');
+        if (targetInput) {
+            // Check on input (debounced)
+            let timeoutId;
+            targetInput.addEventListener('input', function() {
+                clearTimeout(timeoutId);
+                timeoutId = setTimeout(() => {
+                    checkUrlAndToggleDiscovery();
+                }, 500); // Wait 500ms after user stops typing
+            });
+            
+            // Also check on blur (when user leaves input field)
+            targetInput.addEventListener('blur', function() {
+                checkUrlAndToggleDiscovery();
+            });
+        }
     </script>
 </body>
 </html>
