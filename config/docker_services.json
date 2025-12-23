@@ -1,0 +1,65 @@
+{
+  "docker_services": {
+    "user-service": {
+      "ports": [8081],
+      "description": "User Management Service"
+    },
+    "product-service": {
+      "ports": [8082],
+      "description": "Product Catalog Service"
+    },
+    "inventory-service": {
+      "ports": [8083],
+      "description": "Inventory Management Service"
+    },
+    "order-service": {
+      "ports": [8084],
+      "description": "Order Processing Service"
+    },
+    "api-gateway": {
+      "ports": [8080],
+      "description": "API Gateway"
+    },
+    "frontend": {
+      "ports": [80, 443],
+      "description": "Frontend Application"
+    },
+    "redis": {
+      "ports": [6379],
+      "description": "Redis Cache"
+    },
+    "postgres-user": {
+      "ports": [5432],
+      "description": "PostgreSQL - User Database"
+    },
+    "postgres-product": {
+      "ports": [5432],
+      "description": "PostgreSQL - Product Database"
+    },
+    "postgres-order": {
+      "ports": [5432],
+      "description": "PostgreSQL - Order Database"
+    },
+    "postgres-inventory": {
+      "ports": [5432],
+      "description": "PostgreSQL - Inventory Database"
+    }
+  },
+  "common_service_names": [
+    "auth-service",
+    "payment-service",
+    "notification-service",
+    "logging-service",
+    "monitoring-service",
+    "config-service",
+    "discovery-service",
+    "mysql",
+    "mongodb",
+    "rabbitmq",
+    "kafka",
+    "elasticsearch",
+    "memcached",
+    "nginx",
+    "consul"
+  ]
+}

@@ -19,7 +19,7 @@ class BlackBoxConfig:
     callback_url: Optional[str] = None
     
     # ===== 1. TEST MODE =====
-    test_mode: str = "blackbox"  # "blackbox", "graybox", "whitebox"
+    test_mode: str = "blackbox"  # "blackbox", "graybox"
     auto_discovery: bool = False
     
     # ===== 2. TARGET TYPE =====
@@ -96,40 +96,15 @@ class GrayBoxConfig:
     auth_bypass_test: bool = True
 
 @dataclass
-class WhiteBoxConfig:
-    """Cấu hình cho White Box testing - Enhanced với auto checklist generation"""
-    source_code_path: str
-    languages: List[str] = field(default_factory=lambda: ["python", "java", "javascript"])
-    
-    # Static analysis
-    code_scan: bool = True
-    dependency_check: bool = True
-    config_audit: bool = True
-    
-    # Auto SSRF checklist generation from code
-    auto_generate_ssrf_checklist: bool = True
-    scan_routers: bool = True  # Analyze route definitions
-    scan_http_clients: bool = True  # Find requests/axios/fetch calls
-    scan_url_params: bool = True  # Find URL construction from user input
-    
-    # Dynamic analysis
-    instrumentation: bool = False
-    runtime_trace: bool = False
-    
-    # Automated testing
-    generate_tests: bool = True
-
-@dataclass
 class ToolkitConfig:
     """Cấu hình tổng thể"""
-    mode: str  # "blackbox", "graybox", "whitebox", or "all"
+    mode: str  # "blackbox", "graybox", or "all"
     output_dir: str = "reports"
     log_level: str = "INFO"
     report_format: List[str] = field(default_factory=lambda: ["json", "html", "pdf"])
     
     blackbox: Optional[BlackBoxConfig] = None
     graybox: Optional[GrayBoxConfig] = None
-    whitebox: Optional[WhiteBoxConfig] = None
     
     @classmethod
     def from_file(cls, config_file: str) -> 'ToolkitConfig':
@@ -149,8 +124,6 @@ class ToolkitConfig:
             config.blackbox = BlackBoxConfig(**data['blackbox'])
         if 'graybox' in data:
             config.graybox = GrayBoxConfig(**data['graybox'])
-        if 'whitebox' in data:
-            config.whitebox = WhiteBoxConfig(**data['whitebox'])
         
         return config
     
@@ -167,8 +140,6 @@ class ToolkitConfig:
             data['blackbox'] = self.blackbox.__dict__
         if self.graybox:
             data['graybox'] = self.graybox.__dict__
-        if self.whitebox:
-            data['whitebox'] = self.whitebox.__dict__
         
         with open(config_file, 'w') as f:
             json.dump(data, f, indent=2)
@@ -183,9 +154,4 @@ DEFAULT_BLACKBOX_CONFIG = BlackBoxConfig(
 DEFAULT_GRAYBOX_CONFIG = GrayBoxConfig(
     target_url="http://localhost:8083",
     docker_host="unix:///var/run/docker.sock"
-)
-
-DEFAULT_WHITEBOX_CONFIG = WhiteBoxConfig(
-    source_code_path=".",
-    languages=["python", "java", "javascript"]
 )

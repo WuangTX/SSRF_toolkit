@@ -35,18 +35,16 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.config import ToolkitConfig, BlackBoxConfig, GrayBoxConfig, WhiteBoxConfig
+from core.config import ToolkitConfig, BlackBoxConfig, GrayBoxConfig
 from core.logger import get_logger, init_logger
 from core.database import FindingDatabase, Finding
 
 from blackbox.reconnaissance.endpoint_discovery_v2 import EndpointDiscoveryV2
 from blackbox.reconnaissance.parameter_fuzzer import ParameterFuzzer
-from blackbox.reconnaissance.auto_discovery import AutoDiscovery
 from blackbox.detection.external_callback import CallbackServer, ExternalCallbackDetector
 from blackbox.exploitation.internal_scan import InternalScanner
 from graybox.architecture.docker_inspector import DockerInspector
 from graybox.architecture.ssrf_detector import SSRFDetector
-from whitebox.static_analysis.code_scanner import CodeScanner
 
 # ============================================
 # Callback Server Client Wrapper
@@ -329,6 +327,8 @@ def add_finding(finding: dict):
     try:
         from core.database import Finding
         db = get_db()
+        affected_url = finding.get('affected_url', 'N/A')
+        parameter = finding.get('parameter', 'N/A')
         db_finding = Finding(
             timestamp=finding.get('timestamp', datetime.now().isoformat()),
             mode='graybox',
@@ -352,33 +352,18 @@ def add_finding(finding: dict):
     
     # Emit to UI via SocketIO - send full finding data
     try:
-        # Prepare finding data - handle both whitebox and blackbox formats
-        if 'file' in finding and 'line' in finding:
-            # Whitebox format (code scanning)
-            finding_data = {
-                'type': finding.get('type') or finding.get('category', 'SSRF'),
-                'file': finding.get('file', ''),
-                'line': finding.get('line', 0),
-                'code': finding.get('code', ''),
-                'severity': finding.get('severity', 'MEDIUM'),
-                'description': finding.get('description', ''),
-                'function': finding.get('function', ''),
-                'cwe': finding.get('cwe', 'CWE-918'),
-                'ai_analysis': finding.get('ai_analysis')
-            }
-        else:
-            # Blackbox format (network scanning)
-            finding_data = {
-                'severity': finding.get('severity', 'MEDIUM'),
-                'title': finding.get('title', 'SSRF Vulnerability'),
-                'message': finding.get('description') or finding.get('title', 'Vulnerability found'),
-                'description': finding.get('description', ''),
-                'category': finding.get('category', 'SSRF'),
-                'affected_url': finding.get('affected_url', ''),
-                'method': finding.get('method', 'N/A'),
-                'parameter': finding.get('parameter', 'N/A'),
-                'cvss_score': finding.get('cvss_score', 'N/A'),
-                'cwe_id': finding.get('cwe_id', 'CWE-918'),
+        # Prepare finding data for blackbox/graybox formats
+        finding_data = {
+            'severity': finding.get('severity', 'MEDIUM'),
+            'title': finding.get('title', 'SSRF Vulnerability'),
+            'message': finding.get('description') or finding.get('title', 'Vulnerability found'),
+            'description': finding.get('description', ''),
+            'category': finding.get('category', 'SSRF'),
+            'affected_url': finding.get('affected_url', ''),
+            'method': finding.get('method', 'N/A'),
+            'parameter': finding.get('parameter', 'N/A'),
+            'cvss_score': finding.get('cvss_score', 'N/A'),
+            'cwe_id': finding.get('cwe_id', 'CWE-918'),
                 'evidence': finding.get('evidence', ''),
                 'proof_of_concept': finding.get('proof_of_concept') or finding.get('payload', ''),
                 'remediation': finding.get('remediation', ''),
@@ -619,21 +604,6 @@ def graybox_scan():
     """Graybox scan page"""
     return render_template('graybox.html')
 
-@app.route('/whitebox')
-def whitebox_scan():
-    """Whitebox scan page"""
-    return render_template('whitebox.html')
-
-@app.route('/test-quick')
-def test_quick():
-    """Quick test page for debugging"""
-    return render_template('test_quick.html')
-
-@app.route('/ai-analysis')
-def ai_analysis():
-    """AI Analysis real-time monitoring page"""
-    return render_template('ai_analysis.html')
-
 @app.route('/ssrf-detector-demo')
 def ssrf_detector_demo():
     """SSRF Detector Demo Page"""
@@ -841,7 +811,6 @@ def start_scan():
         # Multipart form data or form-encoded
         mode = request.form.get('mode', 'blackbox')
         target = request.form.get('target')
-        source_path = request.form.get('source_path', '').strip()
         
         # ✅ NEW: Get input_source type to determine workflow
         input_source = request.form.get('input_source', 'domain')  # 'api', 'domain', or 'traffic'
@@ -883,22 +852,9 @@ def start_scan():
         
         # ✅ FIX: Graybox uses 'discover_docker' in form, not 'docker_inspection'
         docker_inspection = request.form.get('discover_docker') == 'on' or request.form.get('docker_inspection') == 'on'
-        code_scanning = request.form.get('code_scanning') == 'on'
         timeout = int(request.form.get('timeout', 10))
         
         web_logger.info(f"🔧 Config: docker_inspection={docker_inspection}")
-        
-        # Validation for whitebox mode
-        if mode == 'whitebox' and not source_path:
-            return jsonify({'error': 'Source code path is required for whitebox analysis'}), 400
-        
-        # Check if path exists (for whitebox)
-        if mode == 'whitebox' and source_path:
-            import os
-            if not os.path.exists(source_path):
-                return jsonify({'error': f'Path not found: {source_path}'}), 400
-            if not os.path.isdir(source_path):
-                return jsonify({'error': f'Path must be a directory: {source_path}'}), 400
         
         # Determine endpoint_source based on input_source
         if input_source == 'api':
@@ -928,10 +884,10 @@ def start_scan():
         if request.form.get('burp_timeout'):
             timeout = int(request.form.get('burp_timeout', 10))
         
-        # Get custom selections
-        custom_params = request.form.get('custom_params')
-        custom_payloads = request.form.get('custom_payloads')
-        custom_endpoints = request.form.get('custom_endpoints')
+        # Get custom selections (REMOVED - not in UI)
+        # custom_params = request.form.get('custom_params')
+        # custom_payloads = request.form.get('custom_payloads')
+        # custom_endpoints = request.form.get('custom_endpoints')
         
         # ✅ NEW: Get custom parameters for SSRF detection
         custom_parameters = request.form.get('custom_parameters', '').strip()
@@ -942,32 +898,22 @@ def start_scan():
         else:
             custom_parameters = []
         
-        if custom_params:
-            custom_params = json.loads(custom_params)
-        if custom_payloads:
-            custom_payloads = json.loads(custom_payloads)
-        if custom_endpoints:
-            custom_endpoints = json.loads(custom_endpoints)
     elif request.json:
         # JSON data (fallback)
         data = request.json
         mode = data.get('mode', 'blackbox')
         target = data.get('target')
-        source_path = data.get('source_path', '')
         auto_discovery = data.get('auto_discovery', False)
         endpoint_discovery = data.get('endpoint_discovery', True)
         parameter_fuzzing = data.get('parameter_fuzzing', True)
         callback_testing = data.get('callback_testing', True)
         internal_scanning = data.get('internal_scanning', True)
         docker_inspection = data.get('docker_inspection', True)
-        code_scanning = data.get('code_scanning', True)
         timeout = data.get('timeout', 10)
         endpoint_source = data.get('endpoint_source', 'file')  # 'file', 'url', or 'both'
         
-        # Get custom selections
-        custom_params = data.get('custom_params')
-        custom_payloads = data.get('custom_payloads')
-        custom_endpoints = data.get('custom_endpoints')
+        # Custom selections removed - not in UI
+        custom_parameters = []
     else:
         return jsonify({'error': 'No form data or JSON data received. Please check your request.'}), 400
     
@@ -975,12 +921,12 @@ def start_scan():
     skip_validation = request.form.get('skip_validation') == 'on' if request.form else False
     
     # Validate input
-    if not target and mode != 'whitebox' and not har_data:
-        web_logger.error(f"Validation failed: target={target}, mode={mode}, har_data={har_data}")
+    if not target and not har_data:
+        web_logger.error(f"Validation failed: target={target}, har_data={har_data}")
         return jsonify({'error': 'Please provide a target URL or upload a HAR/Burp file to begin scanning.'}), 400
     
     # Validate target URL format and accessibility (if provided)
-    if target and mode != 'whitebox':
+    if target:
         # Check URL format
         try:
             parsed = urlparse(target)
@@ -1055,18 +1001,9 @@ def start_scan():
         scan_state['start_time'] = datetime.now()
         scan_state['traffic_data'] = har_data  # Store traffic data (HAR/Burp) for use in scan
         scan_state['endpoint_source'] = endpoint_source  # Store endpoint source preference
-        scan_state['custom_params'] = custom_params  # Store custom param selection
-        scan_state['custom_payloads'] = custom_payloads  # Store custom payload selection
-        scan_state['custom_endpoints'] = custom_endpoints  # Store custom endpoint selection
-        scan_state['custom_parameters'] = custom_parameters  # ✅ Store custom SSRF parameters
+        scan_state['custom_parameters'] = custom_parameters  # Store custom SSRF parameters (from graybox)
     
-    # Log custom selections
-    if custom_params:
-        web_logger.info(f"⚙️ Custom parameters selected: {len(custom_params)} params")
-    if custom_payloads:
-        web_logger.info(f"💉 Custom payloads selected: {len(custom_payloads)} payloads")
-    if custom_endpoints:
-        web_logger.info(f"📍 Custom endpoints selected: {len(custom_endpoints)} endpoints")
+    # Log custom selections (REMOVED - not in UI anymore)
     
     # Create config
     config = ToolkitConfig(
@@ -1084,18 +1021,13 @@ def start_scan():
         graybox=GrayBoxConfig(
             target_url=target or "http://localhost:8083",
             docker_inspect=docker_inspection
-        ),
-        whitebox=WhiteBoxConfig(
-            source_code_path=source_path or "./",
-            code_scan=code_scanning
         )
     )
     
     # Start scan in background thread
     web_logger.info(f"🚀 Starting scan in background thread...")
     web_logger.info(f"   Mode: {mode}")
-    web_logger.info(f"   Source path: {source_path if mode == 'whitebox' else 'N/A'}")
-    web_logger.info(f"   Target: {target if mode != 'whitebox' else 'N/A'}")
+    web_logger.info(f"   Target: {target}")
     
     thread = threading.Thread(target=run_scan, args=(config,))
     thread.daemon = True
@@ -1167,11 +1099,11 @@ def export_pdf_report():
         )
         
         # Title
-        story.append(Paragraph("🔒 Báo Cáo Pentest - SSRF Vulnerability Assessment", title_style))
+        story.append(Paragraph("Báo Cáo Pentest - SSRF Vulnerability Assessment", title_style))
         story.append(Spacer(1, 0.5*cm))
         
         # Executive Summary
-        story.append(Paragraph("📊 Executive Summary", heading_style))
+        story.append(Paragraph("Executive Summary", heading_style))
         
         # Count by severity
         severity_counts = {'CRITICAL': 0, 'HIGH': 0, 'MEDIUM': 0, 'LOW': 0, 'INFO': 0}
@@ -1208,7 +1140,7 @@ def export_pdf_report():
         story.append(Spacer(1, 1*cm))
         
         # Detailed Findings
-        story.append(Paragraph("🔍 Chi Tiết Lỗ Hổng Phát Hiện", heading_style))
+        story.append(Paragraph("Chi Tiết Lỗ Hổng Phát Hiện", heading_style))
         story.append(Spacer(1, 0.3*cm))
         
         for idx, finding in enumerate(findings, 1):
@@ -1255,33 +1187,33 @@ def export_pdf_report():
             
             # Description
             if finding.get('description'):
-                story.append(Paragraph("<b>📝 Mô tả:</b>", styles['Normal']))
+                story.append(Paragraph("Mô tả:", styles['Normal']))
                 story.append(Paragraph(finding['description'], styles['Normal']))
                 story.append(Spacer(1, 0.3*cm))
             
             # Evidence
             if finding.get('evidence'):
-                story.append(Paragraph("<b>🔍 Bằng chứng:</b>", styles['Normal']))
+                story.append(Paragraph("Bằng chứng:", styles['Normal']))
                 evidence_text = finding['evidence'].replace('\n', '<br/>')
                 story.append(Paragraph(f"<font face='Courier' size='9'>{evidence_text}</font>", styles['Normal']))
                 story.append(Spacer(1, 0.3*cm))
             
             # Proof of Concept
             if finding.get('proof_of_concept'):
-                story.append(Paragraph("<b>💣 Proof of Concept (Cách khai thác):</b>", styles['Normal']))
+                story.append(Paragraph("Proof of Concept (Cách khai thác):", styles['Normal']))
                 poc_text = finding['proof_of_concept'].replace('\n', '<br/>')
                 story.append(Paragraph(f"<font face='Courier' size='9' color='red'>{poc_text}</font>", styles['Normal']))
                 story.append(Spacer(1, 0.3*cm))
             
             # Remediation
             if finding.get('remediation'):
-                story.append(Paragraph("<b>✅ Khuyến nghị khắc phục:</b>", styles['Normal']))
+                story.append(Paragraph("Khuyến nghị khắc phục:", styles['Normal']))
                 story.append(Paragraph(finding['remediation'], styles['Normal']))
                 story.append(Spacer(1, 0.3*cm))
             
             # References
             if finding.get('references'):
-                story.append(Paragraph("<b>📚 Tham khảo:</b>", styles['Normal']))
+                story.append(Paragraph("Tham khảo:", styles['Normal']))
                 for ref in finding['references']:
                     story.append(Paragraph(f"• {ref}", styles['Normal']))
             
@@ -1298,7 +1230,7 @@ def export_pdf_report():
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         filename = f"SSRF_Pentest_Report_{timestamp}.pdf"
         
-        web_logger.info(f"📄 Generated PDF report: {filename} ({len(findings)} findings)")
+        web_logger.info(f"Generated PDF report: {filename} ({len(findings)} findings)")
         
         return send_file(
             buffer,
@@ -1314,25 +1246,6 @@ def export_pdf_report():
     except Exception as e:
         web_logger.error(f"❌ Failed to generate PDF report: {e}")
         return jsonify({'error': str(e)}), 500
-
-@app.route('/api/scan/reset', methods=['POST'])
-def reset_scan_endpoint():
-    """Reset scan state (force unlock)"""
-    reset_scan_state()
-    web_logger.info('🔄 Scan state reset and callback server stopped')
-    return jsonify({'success': True, 'message': 'Scan state reset'})
-
-@app.route('/api/scan/status', methods=['GET'])
-def scan_status():
-    """Get current scan status"""
-    with scan_state_lock:
-        return jsonify({
-            'is_running': scan_state['is_running'],
-            'current_phase': scan_state['current_phase'],
-            'progress': scan_state['progress'],
-            'findings_count': len(scan_state['findings']),
-            'start_time': scan_state['start_time'].isoformat() if scan_state['start_time'] else None
-        })
 
 @app.route('/api/findings', methods=['GET'])
 def get_findings():
@@ -1373,66 +1286,6 @@ def export_report():
     
     return jsonify({'success': False, 'error': 'Invalid format'}), 400
 
-@app.route('/api/execute_attack', methods=['POST'])
-def execute_attack():
-    """Execute attack POC for demonstration purposes"""
-    try:
-        data = request.json
-        url = data.get('url')
-        method = data.get('method', 'GET')
-        parameter = data.get('parameter')
-        payload = data.get('payload')
-        
-        if not url or not parameter or not payload:
-            return jsonify({
-                'success': False,
-                'error': 'Missing required parameters'
-            }), 400
-        
-        # Execute the attack request
-        if method.upper() == 'GET':
-            # For GET, replace parameter in URL
-            from urllib.parse import urlencode, parse_qs, urlparse, urlunparse
-            parsed = urlparse(url)
-            params = parse_qs(parsed.query)
-            params[parameter] = [payload]
-            new_query = urlencode(params, doseq=True)
-            attack_url = urlunparse((
-                parsed.scheme, parsed.netloc, parsed.path,
-                parsed.params, new_query, parsed.fragment
-            ))
-            
-            response = requests.get(attack_url, timeout=10, verify=False)
-        else:
-            # For POST/PUT/PATCH, send JSON body
-            json_body = {parameter: payload}
-            response = requests.request(
-                method.upper(),
-                url,
-                json=json_body,
-                timeout=10,
-                verify=False
-            )
-        
-        # Return response
-        return jsonify({
-            'success': True,
-            'status_code': response.status_code,
-            'response_body': response.text[:2000],  # Limit to 2000 chars
-            'headers': dict(response.headers)
-        })
-        
-    except requests.exceptions.Timeout:
-        return jsonify({
-            'success': False,
-            'error': 'Request timed out'
-        }), 408
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
 def run_scan(config: ToolkitConfig):
     """Run the actual scan (background task)"""
     try:
@@ -1444,9 +1297,6 @@ def run_scan(config: ToolkitConfig):
         
         if config.mode in ['graybox', 'all']:
             run_graybox(config, db)
-        
-        if config.mode in ['whitebox', 'all']:
-            run_whitebox(config, db)
         
         # Final phase
         update_progress('Scan Complete', 100)
@@ -1928,160 +1778,10 @@ def run_blackbox(config: ToolkitConfig, db: FindingDatabase):
         run_focused_ssrf_testing(config, db, har_data)
         return
     
-    # Check if Auto Discovery mode is enabled
+    # Check if Auto Discovery mode is enabled (FEATURE REMOVED - not in UI)
     if config.blackbox.auto_discovery:
-        web_logger.info("🤖 AUTO DISCOVERY MODE - Full automation enabled")
-        web_logger.info(f"🎯 Target domain: {target_url}")
-        web_logger.info("📋 Process: Crawl → Discover → Test → Confirm → Report")
-        
-        # Phase 1: Auto Discovery and Intelligent Testing
-        update_progress('Auto Discovery & Testing', 10)
-        
-        try:
-            # Initialize auto discovery with callback server (singleton pattern)
-            callback_server = get_or_create_callback_server(port=8888)
-            set_callback_server(callback_server)
-            
-            web_logger.info(f"📡 Callback server ready on http://0.0.0.0:8888")
-            
-            # Auto-detect public callback URL (ngrok)
-            public_callback_base, callback_source = detect_public_callback_url()
-            if public_callback_base:
-                web_logger.info(f"✅ Auto-detected {callback_source} tunnel: {public_callback_base}")
-            else:
-                web_logger.info(f"⚠️ No public callback detected. Using local addresses.")
-            
-            # Get all callback addresses for Docker/LAN environments
-            callback_addresses = callback_server.get_all_callback_addresses()
-            web_logger.info(f"🌐 Callback addresses: {', '.join(callback_addresses)}")
-            
-            # Initialize auto discovery
-            auto_disco = AutoDiscovery(
-                base_url=target_url,
-                timeout=config.blackbox.timeout
-            )
-            
-            # Run full auto discovery and testing (với ngrok URL ưu tiên)
-            web_logger.info("🚀 Starting comprehensive auto-discovery...")
-            
-            # ✅ Define callback function để emit tested endpoints to UI
-            def emit_tested_endpoint(endpoint_data):
-                """Callback to emit tested endpoint with real status and payload"""
-                web_logger.endpoint(endpoint_data)
-            
-            auto_results = auto_disco.run_full_discovery(
-                callback_url=public_callback_base,  # ✅ Truyền ngrok URL vào!
-                callback_server=callback_server,
-                on_test_callback=emit_tested_endpoint  # ✅ Callback để emit endpoints khi test
-            )
-            
-            # ✅ FIXED: Process results - use correct keys from auto_results
-            # auto_results structure: {'endpoints': Set, 'api_endpoints': Set, 'testable_endpoints': List, ...}
-            discovered_urls = auto_results.get('endpoints', set())  # Crawled URLs
-            api_endpoints = auto_results.get('api_endpoints', set())  # API endpoints (Set)
-            testable_endpoints = auto_results.get('testable_endpoints', [])  # List of testable endpoints
-            ssrf_vulnerabilities = auto_results.get('ssrf_vulnerabilities', [])
-            forms = auto_results.get('forms', [])
-            
-            # ✅ Merge both discovered and API endpoints for UI display
-            discovered_endpoints = list(discovered_urls.union(api_endpoints)) if isinstance(api_endpoints, set) else list(api_endpoints)
-            
-            web_logger.info(f"✅ Auto Discovery Complete!")
-            web_logger.info(f"📊 Statistics:")
-            web_logger.info(f"  • Endpoints discovered: {len(discovered_endpoints)}")
-            web_logger.info(f"  • API endpoints: {len(api_endpoints)}")
-            web_logger.info(f"  • Forms found: {len(forms)}")
-            web_logger.info(f"  • Testable endpoints: {len(testable_endpoints)}")
-            web_logger.info(f"  • SSRF vulnerabilities: {len(ssrf_vulnerabilities)}")
-            
-            # Emit SSRF vulnerabilities as HIGH severity findings
-            for vuln in ssrf_vulnerabilities:
-                endpoint = vuln.get('endpoint', '')
-                parameter = vuln.get('parameter', '')
-                payload = vuln.get('payload', '')
-                callback_received = vuln.get('callback_received', {})
-                
-                msg = f"🔥 CONFIRMED SSRF: {endpoint} (param: {parameter})"
-                web_logger.finding('HIGH', msg)
-                web_logger.info(f"     💥 Payload: {payload}")
-                web_logger.info(f"     📡 Callback received: {callback_received.get('path', 'N/A')}")
-            
-            # ✅ NOTE: Endpoints sẽ được emit KHI TEST SSRF (không emit discovered endpoints nữa)
-            # Lý do: Để hiển thị status code THỰC TẾ và payload chi tiết
-            
-            # Emit testable endpoints as findings (for reference)
-            web_logger.info(f"📋 Found {len(testable_endpoints)} testable endpoints")
-            for testable in testable_endpoints[:5]:  # Show first 5 as examples
-                endpoint_url = testable.get('endpoint', '')
-                param = testable.get('parameter', '')
-                msg = f"   • {endpoint_url} → {param}"
-                web_logger.info(msg)
-            
-            update_progress('Auto Discovery Complete', 70)
-            
-            # Phase 2: Internal Scanning (if testable endpoints found)
-            if config.blackbox.internal_scan and testable_endpoints:
-                update_progress('Internal Network Scanning', 75)
-                web_logger.info("🔍 Phase: Internal Network Scanning")
-                
-                # Use first testable endpoint for internal scanning
-                if testable_endpoints:
-                    first_testable = testable_endpoints[0]
-                    endpoint_url = first_testable.get('url', target_url)
-                    params = first_testable.get('parameters', [])
-                    
-                    if params:
-                        try:
-                            scanner = InternalScanner(
-                                ssrf_url=endpoint_url,
-                                ssrf_param=params[0],  # Use first parameter
-                                timeout=config.blackbox.timeout
-                            )
-                        
-                            internal_results = scanner.scan_internal_network()
-                            
-                            for result in internal_results:
-                                web_logger.info(f"  • {result['target']}: {result['status']}")
-                                
-                                if result['accessible']:
-                                    msg = f"Internal host accessible: {result['target']} via SSRF at {endpoint_url}"
-                                    web_logger.finding('HIGH', msg)
-                                    
-                                    finding = Finding(
-                                        title=f"Internal Network Access via SSRF",
-                                        severity='HIGH',
-                                        description=f"Internal host {result['target']} accessible through SSRF",
-                                        affected_endpoint=endpoint_url,
-                                        evidence=f"Parameter: {params[0]}, Internal Target: {result['target']}",
-                                        remediation="Restrict internal network access and implement network segmentation"
-                                    )
-                                    db.add_finding(finding)
-                                    add_finding(finding.to_dict())
-                            
-                            web_logger.info("✅ Internal scanning complete")
-                        except Exception as e:
-                            web_logger.warning(f"⚠️ Internal scanning failed: {str(e)}")
-                
-                update_progress('Internal Scanning Complete', 90)
-            
-            # Don't stop callback server here - let it be reused by next scan
-            # It will be cleaned up when app exits or explicitly stopped
-            web_logger.info("✅ Keeping callback server alive for potential reuse")
-            
-            return  # Exit auto discovery mode
-            
-        except Exception as e:
-            import traceback
-            error_detail = traceback.format_exc()
-            web_logger.error(f"❌ Auto Discovery failed: {str(e)}")
-            web_logger.error(f"Details: {error_detail}")
-            
-            # Don't stop callback server on error - it may be reusable
-            # Just clear the reference from scan_state
-            set_callback_server(None)
-            
-            # Fall back to manual mode
-            web_logger.info("⚠️ Falling back to manual discovery mode...")
+        web_logger.warning("⚠️ Auto Discovery feature has been removed from current version")
+        web_logger.info("💡 Using manual endpoint discovery instead")
     
     # ========================================================================
     # PRIORITY CHECK: Detect if target is a specific API endpoint
@@ -2934,71 +2634,6 @@ def run_graybox(config: ToolkitConfig, db: FindingDatabase):
             web_logger.warning(f"Docker inspection failed: {str(e)}")
             web_logger.warning(f"Traceback: {traceback.format_exc()}")
 
-def run_whitebox(config: ToolkitConfig, db: FindingDatabase):
-    """Run white box testing"""
-    web_logger.info("=" * 60)
-    web_logger.info("📝 Starting White Box Testing")
-    web_logger.info(f"   Source path: {config.whitebox.source_code_path}")
-    web_logger.info(f"   Use AI: {config.whitebox.use_ai}")
-    web_logger.info(f"   AI Model: {config.whitebox.ai_model}")
-    web_logger.info(f"   Max AI findings: {getattr(config.whitebox, 'max_ai_findings', 20)}")
-    web_logger.info("=" * 60)
-    
-    if config.whitebox.code_scan and config.whitebox.source_code_path:
-        update_progress('Code Scanning', 90)
-        web_logger.info("🔍 Scanning source code")
-        
-        # Check if AI analysis is enabled
-        use_ai = config.whitebox.use_ai
-        ai_model = config.whitebox.ai_model
-        
-        if use_ai:
-            web_logger.info(f"🤖 AI Analysis ENABLED with model: {ai_model}")
-            web_logger.info("📊 Two-phase analysis: Fast Static Scan → AI Deep Analysis")
-        
-        # Initialize scanner with AI support
-        scanner = CodeScanner(
-            config.whitebox.source_code_path,
-            use_ai=use_ai,
-            ai_model=ai_model
-        )
-        
-        # Get max AI findings limit
-        max_ai_findings = getattr(config.whitebox, 'max_ai_findings', 20)
-        
-        # Phase 1: Traditional static analysis
-        update_progress('Phase 1: Static Analysis', 92)
-        vulnerabilities = scanner.scan_directory(max_ai_findings=max_ai_findings)
-        
-        # Phase 2: AI deep analysis (if enabled)
-        if use_ai:
-            update_progress('Phase 2: AI Deep Analysis', 97)
-            web_logger.info("🧠 AI is analyzing findings for false positives...")
-        
-        # Log findings with AI insights and emit to UI
-        for vuln in vulnerabilities:
-            # Build finding message
-            msg = f"{vuln['type']} in {vuln['file']}:{vuln['line']} - {vuln['description']}"
-            
-            # Add AI analysis info if available
-            if 'ai_analysis' in vuln and vuln['ai_analysis']:
-                ai = vuln['ai_analysis']
-                confidence = ai.get('confidence', 0)
-                msg += f" [AI Confidence: {confidence}%]"
-                
-                if ai.get('reasoning'):
-                    msg += f"\n   💡 AI: {ai['reasoning']}"
-            
-            web_logger.finding(vuln['severity'], msg)
-            
-            # IMPORTANT: Emit finding to UI via WebSocket
-            add_finding(vuln)
-        
-        # Summary log
-        if use_ai and vulnerabilities:
-            confirmed = sum(1 for v in vulnerabilities if v.get('ai_analysis', {}).get('vulnerable', True))
-            web_logger.info(f"✅ AI Analysis Complete: {confirmed}/{len(vulnerabilities)} findings confirmed")
-
 def update_progress(phase: str, progress: int):
     """Update scan progress (thread-safe)"""
     with scan_state_lock:
@@ -3009,69 +2644,6 @@ def update_progress(phase: str, progress: int):
         'progress': progress,
         'percent': progress  # Add 'percent' for frontend compatibility
     })
-
-# ============================================================
-# SSRF DETECTION API ENDPOINTS
-# ============================================================
-
-@app.route('/api/ssrf/detect', methods=['POST'])
-def detect_ssrf_from_request():
-    """Detect SSRF from raw HTTP request or structured data"""
-    try:
-        data = request.get_json()
-        
-        # Get Docker containers for topology
-        docker_containers = []
-        try:
-            inspector = DockerInspector()
-            if inspector.is_available:
-                docker_containers = inspector.get_containers()
-        except:
-            pass
-        
-        # Initialize SSRF detector
-        detector = SSRFDetector(docker_services=docker_containers)
-        
-        # Check if raw request or structured data
-        if 'raw_request' in data:
-            # Parse raw HTTP request
-            findings = detector.detect_from_burp_request(data['raw_request'])
-        else:
-            # Structured data
-            findings = detector.detect_from_http_request(
-                url=data.get('url', ''),
-                method=data.get('method', 'GET'),
-                query_params=data.get('query_params'),
-                body_params=data.get('body_params'),
-                headers=data.get('headers')
-            )
-        
-        # Format findings
-        results = []
-        for finding in findings:
-            results.append({
-                'url': finding.url,
-                'method': finding.method,
-                'parameter': finding.parameter,
-                'parameter_type': finding.parameter_type,
-                'confidence': finding.confidence,
-                'reason': finding.reason,
-                'potential_targets': finding.potential_targets,
-                'detection_method': finding.detection_method
-            })
-        
-        return jsonify({
-            'success': True,
-            'total_findings': len(results),
-            'findings': results,
-            'report': detector.generate_report()
-        })
-        
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
 
 # ============================================================
 # EXPLOITATION API ENDPOINTS
@@ -3137,21 +2709,46 @@ def exploit_internal_scan():
         services_by_name = []
         services_by_ip = []
         
-        # STEP 3A: Docker service names (for containers in same network)
+        # STEP 3A: Load Docker service names from config file
         # If target is INSIDE Docker network, it can resolve these names
-        docker_services = {
-            'user-service': [8081],
-            'product-service': [8082],
-            'inventory-service': [8083],
-            'order-service': [8084],
-            'api-gateway': [8080],
-            'frontend': [80],
-            'redis': [6379],
-            'postgres-user': [5432],
-            'postgres-product': [5432],
-            'postgres-order': [5432],
-            'postgres-inventory': [5432],
-        }
+        docker_services = {}
+        config_path = Path(__file__).parent.parent / 'config' / 'docker_services.json'
+        
+        try:
+            if config_path.exists():
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config_data = json.load(f)
+                    # Convert format: {service_name: {ports: [...], description: ...}} 
+                    # to simple: {service_name: [ports]}
+                    for service_name, service_info in config_data.get('docker_services', {}).items():
+                        docker_services[service_name] = service_info['ports']
+                web_logger.info(f"✅ Loaded {len(docker_services)} services from {config_path.name}")
+            else:
+                web_logger.warning(f"⚠️ Config file not found: {config_path}, using default services")
+                # Fallback to default
+                docker_services = {
+                    'user-service': [8081],
+                    'product-service': [8082],
+                    'inventory-service': [8083],
+                    'order-service': [8084],
+                    'api-gateway': [8080],
+                    'frontend': [80],
+                    'redis': [6379],
+                    'postgres-user': [5432],
+                    'postgres-product': [5432],
+                    'postgres-order': [5432],
+                    'postgres-inventory': [5432],
+                }
+        except Exception as e:
+            web_logger.error(f"❌ Error loading services config: {e}")
+            # Use default services as fallback
+            docker_services = {
+                'user-service': [8081],
+                'product-service': [8082],
+                'inventory-service': [8083],
+                'order-service': [8084],
+                'api-gateway': [8080],
+            }
         
         # STEP 3B: Try scanning Docker services by NAME first (FAST - only 11 services)
         web_logger.info(f"🔍 Step 1/3: Scanning {len(docker_services)} Docker services by name...")

@@ -6,6 +6,7 @@ eventlet==0.33.3
 python-dotenv>=1.0.0
 
 # Report Generation
+weasyprint>=52.5
 reportlab>=4.0.0
 
 # Core Dependencies

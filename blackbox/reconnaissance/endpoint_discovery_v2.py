@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import csv
 from datetime import datetime
-from .js_analyzer import JavaScriptAnalyzer
+# JavaScriptAnalyzer removed - feature not used
 
 
 @dataclass
@@ -907,50 +907,8 @@ class EndpointDiscoveryV2:
         Returns:
             List[EndpointResult]: Discovered endpoints from JavaScript analysis
         """
-        print("[+] Discovering endpoints from JavaScript...")
-        
-        try:
-            # ✅ FIX: JavaScriptAnalyzer constructor takes (target_url, session, logger)
-            js_analyzer = JavaScriptAnalyzer(self.base_url, self.session, self.logger)
-            
-            # Call discover_from_javascript() directly - it handles page fetching internally
-            # Returns: Set[str] of endpoint URLs
-            js_endpoints = js_analyzer.discover_from_javascript()
-            
-            results = []
-            
-            # ✅ FIX: js_endpoints is a Set[str], not list of dicts
-            for endpoint_url in js_endpoints:
-                # Create EndpointResult from JavaScript analysis
-                result = EndpointResult(
-                    url=endpoint_url,
-                    method='GET',  # Default method
-                    status_code=0,  # Will be validated
-                    response_time=0.0,
-                    content_length=0,
-                    content_type='unknown',
-                    server='',
-                    redirect_url=None,
-                    severity='unknown',
-                    source='javascript',
-                    parameters=[],
-                    headers={},
-                    accepts_post=False,
-                    post_params=[],
-                    ssrf_potential='unknown'
-                )
-                
-                # Validate endpoint by making actual request
-                validated_result = self._validate_endpoint(result)
-                if validated_result:
-                    results.append(validated_result)
-            
-            print(f"[+] Found {len(results)} valid endpoints from JavaScript analysis")
-            return results
-            
-        except Exception as e:
-            print(f"[-] Error in JavaScript discovery: {str(e)}")
-            return []
+        print("[+] JavaScript analysis skipped - feature removed")
+        return []
 
     def _validate_endpoint(self, endpoint_result):
         """
