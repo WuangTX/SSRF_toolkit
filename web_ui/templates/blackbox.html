@@ -375,23 +375,14 @@
                         <div class="radio-group">
                             <div class="radio-item" onclick="selectInputSource('api')">
                                 <input type="radio" name="input_source" value="api">
-                                <label>🎯 Specific API Endpoint</label>
+                                <label>Specific API Endpoint</label>
                                 <p style="font-size: 0.85em; color: #666; margin: 5px 0 0 0;">
-                                    Test trực tiếp 1 API endpoint cụ thể (VD: /api/products/5/fetch_review)
                                 </p>
                             </div>
                             <div class="radio-item selected" onclick="selectInputSource('domain')">
                                 <input type="radio" name="input_source" value="domain" checked>
-                                <label>🌐 Domain/Website</label>
+                                <label>Domain/Website</label>
                                 <p style="font-size: 0.85em; color: #666; margin: 5px 0 0 0;">
-                                    Discover endpoints từ domain (VD: https://example.com)
-                                </p>
-                            </div>
-                            <div class="radio-item" onclick="selectInputSource('traffic')">
-                                <input type="radio" name="input_source" value="traffic">
-                                <label>📦 Traffic Capture (Burp/HAR)</label>
-                                <p style="font-size: 0.85em; color: #666; margin: 5px 0 0 0;">
-                                    Upload file chứa NHIỀU requests đã capture (Chrome HAR, Burp export)
                                 </p>
                             </div>
                         </div>
@@ -402,29 +393,9 @@
                         <label id="target_label">Domain/Website URL *</label>
                         <input type="text" name="target" id="target_url" placeholder="https://example.com">
                         <div id="target_help" class="help-text">
-                            <strong>Ví dụ:</strong> https://quangtx.io.vn hoặc https://api.example.com<br>
-                            ℹ️ Domain chung → Cần discovery để tìm endpoints
+        
                         </div>
-                    </div>
-                    
-                    <!-- Traffic Capture Input -->
-                    <div id="traffic_input" class="form-group" style="display: none;">
-                        <label>Upload Traffic File (HAR/Burp JSON)</label>
-                        <div class="file-upload" onclick="document.getElementById('traffic_file').click()">
-                            <input type="file" id="traffic_file" name="traffic_file" accept=".har,.json">
-                            <p>📁 Click để chọn file hoặc kéo thả vào đây</p>
-                        </div>
-                        <div class="alert" style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 12px; margin-top: 15px; border-radius: 6px;">
-                            <p style="margin: 0; color: #856404; font-size: 0.9em; line-height: 1.6;">
-                                <strong>💡 HAR/Burp file là gì?</strong><br>
-                                • File chứa <strong>NHIỀU requests/responses</strong> khi browse website<br>
-                                • <strong>Cách tạo HAR:</strong> Chrome DevTools → Network → Right-click → "Save all as HAR"<br>
-                                • <strong>Cách tạo Burp:</strong> Burp Suite → Proxy → HTTP History → Select all → Right-click → "Save items"<br>
-                                • Tool sẽ extract <strong>tất cả endpoints</strong> từ file (có thể 50-200+ endpoints)<br>
-                                • Bao gồm: URLs, headers, cookies, POST data, authentication tokens
-                            </p>
-                        </div>
-                    </div>
+                    </div> 
                 </div>
                 
                 <div class="config-section">
@@ -457,7 +428,7 @@
             <!-- TAB 2: Payload Strategy -->
             <div id="tab2" class="tab-content">
                 <div class="config-section">
-                    <h3>💣 Attack Depth</h3>
+                    <h3>Attack Depth</h3>
                     <div class="radio-group">
                         <div class="radio-item selected" onclick="selectAttackDepth('quick')">
                             <input type="radio" name="attack_depth" value="quick" checked>
@@ -467,22 +438,13 @@
                             <input type="radio" name="attack_depth" value="deep">
                             <label>Deep (20-40 phút)</label>
                         </div>
-                        <div class="radio-item" onclick="selectAttackDepth('cloud')">
-                            <input type="radio" name="attack_depth" value="cloud">
-                            <label>Cloud Focused</label>
-                        </div>
-                        <div class="radio-item" onclick="selectAttackDepth('container')">
-                            <input type="radio" name="attack_depth" value="container">
-                            <label>Container Focused</label>
-                        </div>
                     </div>
                     <div class="help-text" style="margin-top: 15px;">
-                        Quick: Payload cơ bản | Deep: 500+ signatures | Cloud/Container: Chuyên biệt
                     </div>
                 </div>
                 
                 <div class="config-section">
-                    <h3>🛠️ Payload Techniques</h3>
+                    <h3>Payload Techniques</h3>
                     <div class="checkbox-group">
                         <div class="checkbox-item">
                             <input type="checkbox" id="payload_bypass" name="payload_strategies" value="url_bypass" checked>
@@ -492,14 +454,7 @@
                             <input type="checkbox" id="payload_protocol" name="payload_strategies" value="protocol_smuggling">
                             <label for="payload_protocol">Protocol Smuggling (gopher, dict, ftp)</label>
                         </div>
-                        <div class="checkbox-item">
-                            <input type="checkbox" id="payload_redirect" name="payload_strategies" value="redirect_based">
-                            <label for="payload_redirect">Redirect-based SSRF</label>
-                        </div>
-                        <div class="checkbox-item">
-                            <input type="checkbox" id="payload_header" name="payload_strategies" value="header_injection">
-                            <label for="payload_header">Header Injection</label>
-                        </div>
+                        
                     </div>
                 </div>
                 

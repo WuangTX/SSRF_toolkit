@@ -15,7 +15,7 @@ class Finding:
     """Cấu trúc của một finding"""
     id: Optional[int] = None
     timestamp: str = ""
-    mode: str = ""  # blackbox, graybox, whitebox
+    mode: str = ""  # blackbox, graybox
     severity: str = ""  # CRITICAL, HIGH, MEDIUM, LOW, INFO
     category: str = ""  # SSRF, XSS, SQLi, etc.
     title: str = ""
